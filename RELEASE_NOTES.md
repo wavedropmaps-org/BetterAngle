@@ -1,6 +1,9 @@
+### BetterAngle Pro v5.5.164
+- Automated build release.
+
 ### BetterAngle Pro v5.5.163
-- Auto-learned 3-pixel tripwire pre-arm. Detector now samples a 3x3 grid of cell-centre pixels inside the ROI on every Scan and learns which pixels reliably light up on FOV-rising-edge events vs. stay dark during normal play. After 10 confirmed events, the top 3 candidates with 100% hit-rate AND <0.1% noise rate become an active tripwire. When all three trained pixels match target colour in a single frame (with `matchCount > 0` co-validation), `BlockInput` fires speculatively ~150-200µs ahead of the full AVX2 scan crossing threshold. False-fire probability: ~10⁻⁹ per frame from 3-pixel coincidence — no abort window needed. Persisted in profile JSON; auto-resets on ROI/colour/tolerance change. Debug overlay shows `LEARNING n/10` → `READY (3 px)` → `ARMED` flash.
-- New tripwire fields in `Profile` (`tripwireCandidates`, `tripwireEvents`, `tripwireReady`, `tripwireActiveIdx[3]`, ROI/colour/tolerance snapshot for invalidation). Legacy profiles trigger fresh learning on first session — zero migration friction.
+- Auto-learned 3-pixel tripwire pre-arm. Detector now samples a 3x3 grid of cell-centre pixels inside the ROI on every Scan and learns which pixels reliably light up on FOV-rising-edge events vs. stay dark during normal play. After 10 confirmed events, the top 3 candidates with 100% hit-rate AND <0.1% noise rate become an active tripwire. When all three trained pixels match target colour in a single frame (with `matchCount > 0` co-validation), `BlockInput` fires speculatively ~150-200?s ahead of the full AVX2 scan crossing threshold. False-fire probability: ~10?? per frame from 3-pixel coincidence ? no abort window needed. Persisted in profile JSON; auto-resets on ROI/colour/tolerance change. Debug overlay shows `LEARNING n/10` ? `READY (3 px)` ? `ARMED` flash.
+- New tripwire fields in `Profile` (`tripwireCandidates`, `tripwireEvents`, `tripwireReady`, `tripwireActiveIdx[3]`, ROI/colour/tolerance snapshot for invalidation). Legacy profiles trigger fresh learning on first session ? zero migration friction.
 - `FovDetector::Scan` extended with optional `outGridSamples` parameter (9 BGRA DWORDs); ~50ns cost. Same change applied to `ScanBitBlt` so tripwire works on the BitBlt fallback too.
 
 ### BetterAngle Pro v5.5.162
