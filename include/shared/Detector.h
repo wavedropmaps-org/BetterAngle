@@ -17,7 +17,9 @@ class FovDetector {
 public:
   FovDetector();
   ~FovDetector();
-  int Scan(const RoiConfig &cfg);
+  // outGridSamples (optional, length 9): 3x3 grid of cell-centre BGRA pixels
+  // sampled inside the ROI. Used by the tripwire learner. If null, skipped.
+  int Scan(const RoiConfig &cfg, DWORD *outGridSamples = nullptr);
 
   // Reinit the DXGI duplication for the given monitor index. Strict — if the
   // monitor's output isn't reachable from this adapter, m_dxgiOk stays false
@@ -52,7 +54,7 @@ private:
   void ReleaseDXGI();
   void EnsureScreenDC();
   void EnsureResources(int w, int h);
-  int  ScanBitBlt(const RoiConfig &cfg);
+  int  ScanBitBlt(const RoiConfig &cfg, DWORD *outGridSamples = nullptr);
 };
 
 #endif // DETECTOR_H

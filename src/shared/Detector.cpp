@@ -202,7 +202,7 @@ void FovDetector::ReinitDisplay(int monitorIndex) {
 
 // ---------- main scan ------------------------------------------------------
 
-int FovDetector::Scan(const RoiConfig &cfg) {
+int FovDetector::Scan(const RoiConfig &cfg, DWORD *outGridSamples) {
   if (cfg.w <= 0 || cfg.h <= 0) return 0;
 
   if (m_dxgiOk) {
@@ -224,7 +224,7 @@ int FovDetector::Scan(const RoiConfig &cfg) {
       // Device lost, mode change, or other failure. Don't recreate here
       // (that would race a concurrent SamplePixelDXGI call on main thread).
       // The next display change / screen-index change will trigger ReinitDisplay.
-      return ScanBitBlt(cfg);
+      return ScanBitBlt(cfg, outGridSamples);
     }
 
     ID3D11Texture2D *desktopTex = nullptr;
@@ -232,7 +232,7 @@ int FovDetector::Scan(const RoiConfig &cfg) {
     res->Release();
     if (!desktopTex) {
       m_duplication->ReleaseFrame();
-      return ScanBitBlt(cfg);
+      return ScanBitBlt(cfg, outGridSamples);
     }
 
     D3D11_TEXTURE2D_DESC desc;
@@ -243,7 +243,7 @@ int FovDetector::Scan(const RoiConfig &cfg) {
         desc.Format != DXGI_FORMAT_B8G8R8A8_UNORM_SRGB) {
       desktopTex->Release();
       m_duplication->ReleaseFrame();
-      return ScanBitBlt(cfg);
+      return ScanBitBlt(cfg, outGridSamples);
     }
 
     // ROI must lie within the monitor texture (cfg.x/y are monitor-relative).
@@ -252,7 +252,7 @@ int FovDetector::Scan(const RoiConfig &cfg) {
         (UINT)(cfg.y + cfg.h) > desc.Height) {
       desktopTex->Release();
       m_duplication->ReleaseFrame();
-      return ScanBitBlt(cfg);
+      return ScanBitBlt(cfg, outGridSamples);
     }
 
     if (!m_stagingTex || m_stagingW != cfg.w || m_stagingH != cfg.h) {
@@ -283,11 +283,26 @@ int FovDetector::Scan(const RoiConfig &cfg) {
 
     D3D11_MAPPED_SUBRESOURCE mapped{};
     hr = m_d3dCtx->Map(m_stagingTex, 0, D3D11_MAP_READ, 0, &mapped);
-    if (FAILED(hr)) return ScanBitBlt(cfg);
+    if (FAILED(hr)) return ScanBitBlt(cfg, outGridSamples);
 
     int tr = (int)GetRValue(cfg.target);
     int tg = (int)GetGValue(cfg.target);
     int tb = (int)GetBValue(cfg.target);
+
+    // Tripwire grid samples (cell centres of a 3x3 grid). ~9 DWORD reads, ~50ns total.
+    if (outGridSamples) {
+      for (int gy = 0; gy < 3; gy++) {
+        int sy = (cfg.h * (gy * 2 + 1)) / 6;
+        if (sy < 0) sy = 0; else if (sy >= cfg.h) sy = cfg.h - 1;
+        const DWORD *rowPtr = reinterpret_cast<const DWORD *>(
+            static_cast<const BYTE *>(mapped.pData) + sy * mapped.RowPitch);
+        for (int gx = 0; gx < 3; gx++) {
+          int sx = (cfg.w * (gx * 2 + 1)) / 6;
+          if (sx < 0) sx = 0; else if (sx >= cfg.w) sx = cfg.w - 1;
+          outGridSamples[gy * 3 + gx] = rowPtr[sx] & 0x00FFFFFF;
+        }
+      }
+    }
 
     int match = 0;
     for (int row = 0; row < cfg.h; row++) {
@@ -300,7 +315,7 @@ int FovDetector::Scan(const RoiConfig &cfg) {
     return match;
   }
 
-  return ScanBitBlt(cfg);
+  return ScanBitBlt(cfg, outGridSamples);
 }
 
 // ---------- one-shot DXGI sample for the colour picker ---------------------
@@ -414,7 +429,7 @@ void FovDetector::EnsureResources(int w, int h) {
   m_curH = h;
 }
 
-int FovDetector::ScanBitBlt(const RoiConfig &cfg) {
+int FovDetector::ScanBitBlt(const RoiConfig &cfg, DWORD *outGridSamples) {
   g_lastScanUsedDxgi = false;
   EnsureResources(cfg.w, cfg.h);
   // BitBlt source is GetDC(NULL) = full virtual desktop, so screen-space coords.
@@ -424,6 +439,20 @@ int FovDetector::ScanBitBlt(const RoiConfig &cfg) {
   int tr = (int)GetRValue(cfg.target);
   int tg = (int)GetGValue(cfg.target);
   int tb = (int)GetBValue(cfg.target);
+
+  // Tripwire grid samples — fill from m_pixels (DIB section is contiguous w*4).
+  if (outGridSamples) {
+    for (int gy = 0; gy < 3; gy++) {
+      int sy = (cfg.h * (gy * 2 + 1)) / 6;
+      if (sy < 0) sy = 0; else if (sy >= cfg.h) sy = cfg.h - 1;
+      const DWORD *rowPtr = reinterpret_cast<const DWORD *>(m_pixels) + sy * cfg.w;
+      for (int gx = 0; gx < 3; gx++) {
+        int sx = (cfg.w * (gx * 2 + 1)) / 6;
+        if (sx < 0) sx = 0; else if (sx >= cfg.w) sx = cfg.w - 1;
+        outGridSamples[gy * 3 + gx] = rowPtr[sx] & 0x00FFFFFF;
+      }
+    }
+  }
 
   int match = 0;
   for (int row = 0; row < cfg.h; row++) {

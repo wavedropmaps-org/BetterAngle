@@ -60,6 +60,7 @@ void StartBlockInputWorker() {
       for (int i = 0; i < ticks && IsFortniteForeground(); i++) Sleep(10);
       BlockInput(FALSE);
       g_blockInputActive = false;
+      g_preArmActive = false;
       g_lastLockTime = GetTickCount64();
     }
   }).detach();
@@ -99,6 +100,7 @@ void FocusMonitorThread() {
         BlockInput(FALSE);
         g_blockInputActive = false;
       }
+      g_preArmActive = false;
       g_mouseSuspendedUntil = 0;
     }
 
@@ -116,6 +118,71 @@ void FocusMonitorThread() {
     lastFortniteFocused = currentFortniteFocused;
     Sleep(1);
   }
+}
+
+// ---- Tripwire helpers (v5.5.162) ------------------------------------------
+// Auto-learned 3-pixel tripwire: fires BlockInput speculatively when three
+// trained ROI pixels all match target colour in the same frame, skipping the
+// wait for the full AVX2 ROI scan to confirm. See plan v3 for design rationale.
+
+static bool PixelMatchesTarget(DWORD pix, COLORREF target, int tolerance) {
+  int b = (int)(pix & 0xFF);
+  int g = (int)((pix >> 8) & 0xFF);
+  int r = (int)((pix >> 16) & 0xFF);
+  int tr = (int)GetRValue(target);
+  int tg = (int)GetGValue(target);
+  int tb = (int)GetBValue(target);
+  int dr = r - tr, dg = g - tg, db = b - tb;
+  return dr * dr + dg * dg + db * db <= tolerance * tolerance;
+}
+
+// Promote learning to "ready" once we have >=10 events and >=3 candidates
+// with 100% hit rate AND <0.1% noise rate. Returns true on activation.
+static bool TryActivateTripwire(Profile &p) {
+  if (p.tripwireEvents < 10) return false;
+  if (p.tripwireCandidates.size() < 3) return false;
+
+  int qualifiedIdx[9];
+  long long qualifiedScore[9];
+  int qualifiedCount = 0;
+  for (int i = 0; i < (int)p.tripwireCandidates.size() && qualifiedCount < 9; i++) {
+    auto &c = p.tripwireCandidates[i];
+    if (c.hits != p.tripwireEvents) continue;        // 100% hit rate gate
+    if (c.idleSamples < 1000) continue;              // need enough idle samples
+    if (c.noise * 1000 > c.idleSamples) continue;    // <0.1% noise rate gate
+    qualifiedIdx[qualifiedCount] = i;
+    qualifiedScore[qualifiedCount] =
+        (long long)c.idleSamples - (long long)c.noise * 1000;
+    qualifiedCount++;
+  }
+
+  if (qualifiedCount < 3) return false;
+
+  // Selection sort the top 3 by score (qualifiedCount <= 9, no perf concern).
+  for (int k = 0; k < 3; k++) {
+    int bestK = k;
+    for (int j = k + 1; j < qualifiedCount; j++) {
+      if (qualifiedScore[j] > qualifiedScore[bestK]) bestK = j;
+    }
+    if (bestK != k) {
+      std::swap(qualifiedIdx[k], qualifiedIdx[bestK]);
+      std::swap(qualifiedScore[k], qualifiedScore[bestK]);
+    }
+    p.tripwireActiveIdx[k] = qualifiedIdx[k];
+  }
+
+  p.tripwireReady = true;
+  p.tripwireSavedRoiX = p.roi_x;
+  p.tripwireSavedRoiY = p.roi_y;
+  p.tripwireSavedRoiW = p.roi_w;
+  p.tripwireSavedRoiH = p.roi_h;
+  p.tripwireSavedColor = p.target_color;
+  p.tripwireSavedTolerance = p.tolerance;
+
+  std::wstring profilePath = GetProfilesPath() + L"/" + p.name + L".json";
+  p.Save(profilePath);
+  LOG_INFO("Tripwire activated (3-pixel coincidence trained)");
+  return true;
 }
 
 // FOV Detector Thread - Now focused solely on ROI scanning
@@ -160,8 +227,38 @@ void DetectorThread() {
         // Store screen-space offset for BitBlt fallback
         cfg.monitorOffsetX = mRect.left;
         cfg.monitorOffsetY = mRect.top;
+
+        // --- Tripwire learning state housekeeping (v5.5.162) ---------------
+        // Drop learned tripwire if ROI/colour/tolerance changed since saving.
+        if (p.tripwireReady &&
+            (p.roi_x != p.tripwireSavedRoiX ||
+             p.roi_y != p.tripwireSavedRoiY ||
+             p.roi_w != p.tripwireSavedRoiW ||
+             p.roi_h != p.tripwireSavedRoiH ||
+             p.target_color != p.tripwireSavedColor ||
+             p.tolerance != p.tripwireSavedTolerance)) {
+          p.tripwireCandidates.clear();
+          p.tripwireEvents = 0;
+          p.tripwireReady = false;
+          p.tripwireActiveIdx[0] = p.tripwireActiveIdx[1] =
+              p.tripwireActiveIdx[2] = -1;
+          LOG_INFO("Tripwire reset (ROI/colour/tolerance changed)");
+        }
+        // Initialise the 3x3 candidate grid on first encounter.
+        if (p.tripwireCandidates.empty() && p.roi_w > 0 && p.roi_h > 0) {
+          p.tripwireCandidates.resize(9);
+          for (int i = 0; i < 9; i++) {
+            p.tripwireCandidates[i].x = (p.roi_w * ((i % 3) * 2 + 1)) / 6;
+            p.tripwireCandidates[i].y = (p.roi_h * ((i / 3) * 2 + 1)) / 6;
+            p.tripwireCandidates[i].hits = 0;
+            p.tripwireCandidates[i].noise = 0;
+            p.tripwireCandidates[i].idleSamples = 0;
+          }
+        }
+
+        DWORD gridSamples[9] = {0};
         ULONGLONG startMs = GetTickCount64();
-        int scanResult = g_detector.Scan(cfg);
+        int scanResult = g_detector.Scan(cfg, gridSamples);
         ULONGLONG endMs = GetTickCount64();
         ULONGLONG scanMs = endMs - startMs;
         g_detectionDelayMs = scanMs;
@@ -191,6 +288,62 @@ void DetectorThread() {
           peakMatchTimestamp = now;
         } else if (currentMatch > g_peakMatchCount.load()) {
           g_peakMatchCount = currentMatch;
+        }
+
+        // --- Tripwire training & pre-arm (v5.5.162) ------------------------
+        bool diving = (currentMatch >= g_requiredMatchCount.load());
+
+        // Train on FOV-rising edge (idle -> diving).
+        if (diving && !lastDiving && !p.tripwireCandidates.empty()) {
+          for (int i = 0; i < (int)p.tripwireCandidates.size(); i++) {
+            if (PixelMatchesTarget(gridSamples[i], p.target_color, p.tolerance)) {
+              p.tripwireCandidates[i].hits++;
+            }
+          }
+          p.tripwireEvents++;
+          TryActivateTripwire(p);
+        }
+
+        // Sample noise during clearly-idle frames (matchCount well below
+        // threshold). Builds the per-candidate false-match denominator that
+        // the activation gate uses to enforce <0.1% noise.
+        if (currentMatch < g_requiredMatchCount.load() / 5 &&
+            !p.tripwireCandidates.empty()) {
+          for (int i = 0; i < (int)p.tripwireCandidates.size(); i++) {
+            p.tripwireCandidates[i].idleSamples++;
+            if (PixelMatchesTarget(gridSamples[i], p.target_color, p.tolerance)) {
+              p.tripwireCandidates[i].noise++;
+            }
+          }
+        }
+
+        // Pre-arm check: ALL three trained pixels match in this same frame
+        // AND matchCount > 0 (co-validation). Fires BlockInput speculatively
+        // ~150-200µs before the full scan would have crossed threshold.
+        if (p.tripwireReady && currentMatch > 0 &&
+            !g_blockInputActive.load() && !g_preArmActive.load() &&
+            !g_isCursorVisible &&
+            GetTickCount64() >= g_mouseSuspendedUntil &&
+            (GetTickCount64() - g_lastLockTime > 500)) {
+          bool allMatch = true;
+          for (int k = 0; k < 3; k++) {
+            int idx = p.tripwireActiveIdx[k];
+            if (idx < 0 || idx >= (int)p.tripwireCandidates.size() ||
+                !PixelMatchesTarget(gridSamples[idx], p.target_color,
+                                    p.tolerance)) {
+              allMatch = false;
+              break;
+            }
+          }
+          if (allMatch) {
+            g_lastLockTime = GetTickCount64();
+            g_mouseSuspendedUntil = GetTickCount64() + 200;
+            g_lockDurationMs = 200;
+            g_preArmActive = true;
+            g_lastPreArmTime = GetTickCount64();
+            SetEvent(g_lockEvent);
+            LOG_INFO("Tripwire pre-arm fired (3-pixel coincidence)");
+          }
         }
       } else {
         // Fortnite not focused, reset detection to 0

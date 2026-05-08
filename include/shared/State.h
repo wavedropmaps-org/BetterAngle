@@ -34,7 +34,7 @@ extern std::string g_lastVersionRun;
 #ifndef V_MAJ
 #define V_MAJ 5
 #define V_MIN 5
-#define V_PAT 162
+#define V_PAT 163
 #endif
 
 #define VERSION_STR APP_STR_Y(V_MAJ) "." APP_STR_Y(V_MIN) "." APP_STR_Y(V_PAT)
@@ -121,6 +121,13 @@ extern std::atomic<int> g_displayChangeGen;
 //   g_lastPickSource:   0 = no pick yet, 1 = DXGI, 2 = BitBlt fallback
 extern std::atomic<bool> g_lastScanUsedDxgi;
 extern std::atomic<int>  g_lastPickSource;
+
+// Tripwire pre-arm state (v5.5.162). True between the moment the 3-pixel
+// tripwire fires speculatively and the moment BlockInput auto-releases.
+// Used by debug overlay to show "ARMED" indicator.
+extern std::atomic<bool> g_preArmActive;
+// Wall-clock ms of the last pre-arm fire (for fading the ARMED indicator).
+extern std::atomic<ULONGLONG> g_lastPreArmTime;
 
 void NotifyBackendCrosshairChanged();
 void NotifyBackendUpdateStatusChanged();
