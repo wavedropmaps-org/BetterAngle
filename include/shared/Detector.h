@@ -19,7 +19,10 @@ public:
   ~FovDetector();
   // outGridSamples (optional, length 9): 3x3 grid of cell-centre BGRA pixels
   // sampled inside the ROI. Used by the tripwire learner. If null, skipped.
-  int Scan(const RoiConfig &cfg, DWORD *outGridSamples = nullptr);
+  // tripwireActiveIdx: if non-null, checks if all 3 pixels (at these indices)
+  // match target colour; if so, returns -1000 (skip AVX2, pre-arm fires early).
+  int Scan(const RoiConfig &cfg, DWORD *outGridSamples = nullptr,
+           const int *tripwireActiveIdx = nullptr, bool tripwireReady = false);
 
   // Reinit the DXGI duplication for the given monitor index. Strict — if the
   // monitor's output isn't reachable from this adapter, m_dxgiOk stays false
@@ -54,7 +57,8 @@ private:
   void ReleaseDXGI();
   void EnsureScreenDC();
   void EnsureResources(int w, int h);
-  int  ScanBitBlt(const RoiConfig &cfg, DWORD *outGridSamples = nullptr);
+  int  ScanBitBlt(const RoiConfig &cfg, DWORD *outGridSamples = nullptr,
+                  const int *tripwireActiveIdx = nullptr, bool tripwireReady = false);
 };
 
 #endif // DETECTOR_H

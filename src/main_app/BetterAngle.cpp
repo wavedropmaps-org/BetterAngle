@@ -26,9 +26,11 @@
 #include <QGuiApplication>
 
 #include <psapi.h>
+#include <avrt.h>
 #pragma comment(lib, "dwmapi.lib")
 #pragma comment(lib, "gdiplus.lib")
 #pragma comment(lib, "psapi.lib")
+#pragma comment(lib, "avrt.lib")
 
 using namespace Gdiplus;
 
@@ -187,6 +189,31 @@ static bool TryActivateTripwire(Profile &p) {
 
 // FOV Detector Thread - Now focused solely on ROI scanning
 void DetectorThread() {
+  // Option 2: Scheduler priority boost (v5.5.164)
+  SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
+  DWORD taskIndex = 0;
+  HANDLE taskHandle = AvSetMmThreadCharacteristics(L"Pro Audio", &taskIndex);
+  if (taskHandle) {
+    LOG_INFO("Detector thread: MMCSS Pro Audio enabled");
+  } else {
+    LOG_INFO("Detector thread: MMCSS unavailable (Home Edition?), using priority boost alone");
+  }
+
+  // Option 3: CPU core pinning (v5.5.164)
+  SYSTEM_INFO sysInfo;
+  GetSystemInfo(&sysInfo);
+  DWORD numCores = sysInfo.dwNumberOfProcessors;
+  if (numCores > 1) {
+    // Pin to last core to avoid UI thread (typically core 0)
+    DWORD coreIdx = numCores - 1;
+    DWORD_PTR affinityMask = 1ULL << coreIdx;
+    if (SetThreadAffinityMask(GetCurrentThread(), affinityMask)) {
+      LOG_INFO("Detector thread pinned to core %lu", coreIdx);
+    } else {
+      LOG_INFO("Detector thread: SetThreadAffinityMask failed (may be OK on low-core systems)");
+    }
+  }
+
   bool lastDiving = false;
   ULONGLONG peakMatchTimestamp = 0;
   float lastSensX = -1.0f;
@@ -258,16 +285,27 @@ void DetectorThread() {
 
         DWORD gridSamples[9] = {0};
         ULONGLONG startMs = GetTickCount64();
-        int scanResult = g_detector.Scan(cfg, gridSamples);
+        int scanResult = g_detector.Scan(cfg, gridSamples,
+                                        (const int *)p.tripwireActiveIdx,
+                                        p.tripwireReady);
         ULONGLONG endMs = GetTickCount64();
         ULONGLONG scanMs = endMs - startMs;
         g_detectionDelayMs = scanMs;
 
         // -1 means no new frame was available (DXGI timeout) — skip this cycle
         // entirely to avoid false edge detection from a stale matchCount of 0.
-        // Spin instead of Sleep(1) so we react to the next frame the instant
-        // it arrives (the prior 1ms nap was the dominant latency source).
+        // -1000 means tripwire pre-arm fired (Option 1, v5.5.164) — skip AVX2 loop.
         if (scanResult < 0) {
+          if (scanResult == -1000) {
+            // Tripwire pre-arm fired before AVX2 loop
+            g_lastLockTime = GetTickCount64();
+            g_mouseSuspendedUntil = GetTickCount64() + 200;
+            g_lockDurationMs = 200;
+            g_preArmActive = true;
+            g_lastPreArmTime = GetTickCount64();
+            SetEvent(g_lockEvent);
+            LOG_INFO("Tripwire pre-arm fired (3-pixel coincidence, early)");
+          }
           _mm_pause();
           continue;
         }

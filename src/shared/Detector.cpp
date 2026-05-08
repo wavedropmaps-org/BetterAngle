@@ -202,7 +202,8 @@ void FovDetector::ReinitDisplay(int monitorIndex) {
 
 // ---------- main scan ------------------------------------------------------
 
-int FovDetector::Scan(const RoiConfig &cfg, DWORD *outGridSamples) {
+int FovDetector::Scan(const RoiConfig &cfg, DWORD *outGridSamples,
+                      const int *tripwireActiveIdx, bool tripwireReady) {
   if (cfg.w <= 0 || cfg.h <= 0) return 0;
 
   if (m_dxgiOk) {
@@ -224,7 +225,7 @@ int FovDetector::Scan(const RoiConfig &cfg, DWORD *outGridSamples) {
       // Device lost, mode change, or other failure. Don't recreate here
       // (that would race a concurrent SamplePixelDXGI call on main thread).
       // The next display change / screen-index change will trigger ReinitDisplay.
-      return ScanBitBlt(cfg, outGridSamples);
+      return ScanBitBlt(cfg, outGridSamples, tripwireActiveIdx, tripwireReady);
     }
 
     ID3D11Texture2D *desktopTex = nullptr;
@@ -232,7 +233,7 @@ int FovDetector::Scan(const RoiConfig &cfg, DWORD *outGridSamples) {
     res->Release();
     if (!desktopTex) {
       m_duplication->ReleaseFrame();
-      return ScanBitBlt(cfg, outGridSamples);
+      return ScanBitBlt(cfg, outGridSamples, tripwireActiveIdx, tripwireReady);
     }
 
     D3D11_TEXTURE2D_DESC desc;
@@ -243,7 +244,7 @@ int FovDetector::Scan(const RoiConfig &cfg, DWORD *outGridSamples) {
         desc.Format != DXGI_FORMAT_B8G8R8A8_UNORM_SRGB) {
       desktopTex->Release();
       m_duplication->ReleaseFrame();
-      return ScanBitBlt(cfg, outGridSamples);
+      return ScanBitBlt(cfg, outGridSamples, tripwireActiveIdx, tripwireReady);
     }
 
     // ROI must lie within the monitor texture (cfg.x/y are monitor-relative).
@@ -252,7 +253,7 @@ int FovDetector::Scan(const RoiConfig &cfg, DWORD *outGridSamples) {
         (UINT)(cfg.y + cfg.h) > desc.Height) {
       desktopTex->Release();
       m_duplication->ReleaseFrame();
-      return ScanBitBlt(cfg, outGridSamples);
+      return ScanBitBlt(cfg, outGridSamples, tripwireActiveIdx, tripwireReady);
     }
 
     if (!m_stagingTex || m_stagingW != cfg.w || m_stagingH != cfg.h) {
@@ -301,6 +302,39 @@ int FovDetector::Scan(const RoiConfig &cfg, DWORD *outGridSamples) {
           if (sx < 0) sx = 0; else if (sx >= cfg.w) sx = cfg.w - 1;
           outGridSamples[gy * 3 + gx] = rowPtr[sx] & 0x00FFFFFF;
         }
+      }
+    }
+
+    // Option 1: Tripwire pre-arm before AVX2 (v5.5.164)
+    // Check if all 3 trained pixels match target colour; if so, return sentinel
+    // to signal pre-arm and skip AVX2 loop (~200µs saved per fire).
+    if (tripwireReady && tripwireActiveIdx && outGridSamples) {
+      int tr = (int)GetRValue(cfg.target);
+      int tg = (int)GetGValue(cfg.target);
+      int tb = (int)GetBValue(cfg.target);
+      int tolSq = cfg.tolerance * cfg.tolerance;
+
+      bool allMatch = true;
+      for (int k = 0; k < 3; k++) {
+        int idx = tripwireActiveIdx[k];
+        if (idx < 0 || idx >= 9) {
+          allMatch = false;
+          break;
+        }
+        DWORD pix = outGridSamples[idx];
+        int r = (int)((pix >> 16) & 0xFF);
+        int g = (int)((pix >> 8) & 0xFF);
+        int b = (int)(pix & 0xFF);
+        int dr = r - tr, dg = g - tg, db = b - tb;
+        if ((dr*dr + dg*dg + db*db) > tolSq) {
+          allMatch = false;
+          break;
+        }
+      }
+
+      if (allMatch) {
+        m_d3dCtx->Unmap(m_stagingTex, 0);
+        return -1000; // sentinel: tripwire fired, skip AVX2
       }
     }
 
@@ -429,7 +463,8 @@ void FovDetector::EnsureResources(int w, int h) {
   m_curH = h;
 }
 
-int FovDetector::ScanBitBlt(const RoiConfig &cfg, DWORD *outGridSamples) {
+int FovDetector::ScanBitBlt(const RoiConfig &cfg, DWORD *outGridSamples,
+                            const int *tripwireActiveIdx, bool tripwireReady) {
   g_lastScanUsedDxgi = false;
   EnsureResources(cfg.w, cfg.h);
   // BitBlt source is GetDC(NULL) = full virtual desktop, so screen-space coords.
@@ -451,6 +486,33 @@ int FovDetector::ScanBitBlt(const RoiConfig &cfg, DWORD *outGridSamples) {
         if (sx < 0) sx = 0; else if (sx >= cfg.w) sx = cfg.w - 1;
         outGridSamples[gy * 3 + gx] = rowPtr[sx] & 0x00FFFFFF;
       }
+    }
+  }
+
+  // Option 1: Tripwire pre-arm before AVX2 (v5.5.164)
+  if (tripwireReady && tripwireActiveIdx && outGridSamples) {
+    int tolSq = cfg.tolerance * cfg.tolerance;
+
+    bool allMatch = true;
+    for (int k = 0; k < 3; k++) {
+      int idx = tripwireActiveIdx[k];
+      if (idx < 0 || idx >= 9) {
+        allMatch = false;
+        break;
+      }
+      DWORD pix = outGridSamples[idx];
+      int r = (int)((pix >> 16) & 0xFF);
+      int g = (int)((pix >> 8) & 0xFF);
+      int b = (int)(pix & 0xFF);
+      int dr = r - tr, dg = g - tg, db = b - tb;
+      if ((dr*dr + dg*dg + db*db) > tolSq) {
+        allMatch = false;
+        break;
+      }
+    }
+
+    if (allMatch) {
+      return -1000; // sentinel: tripwire fired, skip AVX2
     }
   }
 
