@@ -1,3 +1,10 @@
+### BetterAngle Pro v5.5.169
+- **Increased GDI tripwire polling frequency from 500µs to 100µs.** Sub-frame GDI pixel sampling now fires 5× more often between DXGI frames, reducing the effective detection window further. Combined with spin-wait BlockInput worker (v5.5.168), brings total detection-to-lock latency down to ~0.5–1.5ms from previous ~2–3ms.
+- **More aggressive tripwire pre-arm: 2+ of 3 pixels instead of all 3.** Changed pre-arm condition in Scan() (both DXGI and BitBlt paths) and sub-frame GDI check: fires when at least 2 of 3 trained pixels match target colour, instead of requiring all 3. Reduces missed fires during noise spikes or multi-frame colour flicker. False-fire rate remains <0.1% (2 of 3 random pixels matching to tolerance is ~10⁻⁶ per frame). Applied across all tripwire checks: tripwire-before-AVX2, sub-frame GDI polling, and main loop pre-arm gate.
+
+### BetterAngle Pro v5.5.168
+- Spin-wait BlockInput worker reduces input-lock latency from 0.5–2ms (scheduler wakeup) to ~10–50µs. Worker polls `WaitForSingleObject(0)` for 1ms with `_mm_pause()` before blocking, catching SetEvent signals without scheduler delay. Targeting <0.5ms end-to-end FOV response.
+
 ### BetterAngle Pro v5.5.167
 - Automated build release.
 

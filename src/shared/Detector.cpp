@@ -309,7 +309,7 @@ int FovDetector::Scan(const RoiConfig &cfg, DWORD *outGridSamples,
     }
 
     // Option 1: Tripwire pre-arm before AVX2 (v5.5.164)
-    // Check if all 3 trained pixels match target colour; if so, return sentinel
+    // Check if at least 2 of 3 trained pixels match target colour; if so, return sentinel
     // to signal pre-arm and skip AVX2 loop (~200µs saved per fire).
     if (tripwireReady && tripwireActiveIdx && outGridSamples) {
       int tr = (int)GetRValue(cfg.target);
@@ -317,25 +317,22 @@ int FovDetector::Scan(const RoiConfig &cfg, DWORD *outGridSamples,
       int tb = (int)GetBValue(cfg.target);
       int tolSq = cfg.tolerance * cfg.tolerance;
 
-      bool allMatch = true;
+      int matchCount = 0;
       for (int k = 0; k < 3; k++) {
         int idx = tripwireActiveIdx[k];
-        if (idx < 0 || idx >= 9) {
-          allMatch = false;
-          break;
-        }
-        DWORD pix = outGridSamples[idx];
-        int r = (int)((pix >> 16) & 0xFF);
-        int g = (int)((pix >> 8) & 0xFF);
-        int b = (int)(pix & 0xFF);
-        int dr = r - tr, dg = g - tg, db = b - tb;
-        if ((dr*dr + dg*dg + db*db) > tolSq) {
-          allMatch = false;
-          break;
+        if (idx >= 0 && idx < 9) {
+          DWORD pix = outGridSamples[idx];
+          int r = (int)((pix >> 16) & 0xFF);
+          int g = (int)((pix >> 8) & 0xFF);
+          int b = (int)(pix & 0xFF);
+          int dr = r - tr, dg = g - tg, db = b - tb;
+          if ((dr*dr + dg*dg + db*db) <= tolSq) {
+            matchCount++;
+          }
         }
       }
 
-      if (allMatch) {
+      if (matchCount >= 2) {
         m_d3dCtx->Unmap(m_stagingTex, 0);
         return -1000; // sentinel: tripwire fired, skip AVX2
       }
@@ -498,25 +495,22 @@ int FovDetector::ScanBitBlt(const RoiConfig &cfg, DWORD *outGridSamples,
   if (tripwireReady && tripwireActiveIdx && outGridSamples) {
     int tolSq = cfg.tolerance * cfg.tolerance;
 
-    bool allMatch = true;
+    int matchCount = 0;
     for (int k = 0; k < 3; k++) {
       int idx = tripwireActiveIdx[k];
-      if (idx < 0 || idx >= 9) {
-        allMatch = false;
-        break;
-      }
-      DWORD pix = outGridSamples[idx];
-      int r = (int)((pix >> 16) & 0xFF);
-      int g = (int)((pix >> 8) & 0xFF);
-      int b = (int)(pix & 0xFF);
-      int dr = r - tr, dg = g - tg, db = b - tb;
-      if ((dr*dr + dg*dg + db*db) > tolSq) {
-        allMatch = false;
-        break;
+      if (idx >= 0 && idx < 9) {
+        DWORD pix = outGridSamples[idx];
+        int r = (int)((pix >> 16) & 0xFF);
+        int g = (int)((pix >> 8) & 0xFF);
+        int b = (int)(pix & 0xFF);
+        int dr = r - tr, dg = g - tg, db = b - tb;
+        if ((dr*dr + dg*dg + db*db) <= tolSq) {
+          matchCount++;
+        }
       }
     }
 
-    if (allMatch) {
+    if (matchCount >= 2) {
       return -1000; // sentinel: tripwire fired, skip AVX2
     }
   }
@@ -549,25 +543,21 @@ bool FovDetector::CheckTripwireGDI(const RoiConfig &cfg,
   int tr = GetRValue(target), tg = GetGValue(target), tb = GetBValue(target);
   int tolSq = tolerance * tolerance;
 
-  bool allMatch = true;
-  for (int k = 0; k < 3 && allMatch; k++) {
+  int matchCount = 0;
+  for (int k = 0; k < 3; k++) {
     int idx = tripwireActiveIdx[k];
-    if (idx < 0 || idx >= 9) {
-      allMatch = false;
-      break;
-    }
-    COLORREF c = GetPixel(hdc, cells[idx].x, cells[idx].y);
-    if (c == CLR_INVALID) {
-      allMatch = false;
-      break;
-    }
-    int r = GetRValue(c), g = GetGValue(c), b = GetBValue(c);
-    int dr = r - tr, dg = g - tg, db = b - tb;
-    if ((dr * dr + dg * dg + db * db) > tolSq) {
-      allMatch = false;
+    if (idx >= 0 && idx < 9) {
+      COLORREF c = GetPixel(hdc, cells[idx].x, cells[idx].y);
+      if (c != CLR_INVALID) {
+        int r = GetRValue(c), g = GetGValue(c), b = GetBValue(c);
+        int dr = r - tr, dg = g - tg, db = b - tb;
+        if ((dr * dr + dg * dg + db * db) <= tolSq) {
+          matchCount++;
+        }
+      }
     }
   }
 
   ReleaseDC(NULL, hdc);
-  return allMatch;
+  return matchCount >= 2;
 }

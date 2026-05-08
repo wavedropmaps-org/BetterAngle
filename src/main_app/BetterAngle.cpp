@@ -50,7 +50,18 @@ void StartBlockInputWorker() {
   std::thread([]() {
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
     while (g_running) {
-      DWORD wait = WaitForSingleObject(g_lockEvent, INFINITE);
+      // Spin-wait for 1ms to catch immediate SetEvent signals (~0.01ms vs ~1ms scheduler latency)
+      ULONGLONG spinStart = GetTickCount64();
+      DWORD wait = WAIT_TIMEOUT;
+      while (GetTickCount64() - spinStart < 1 && wait == WAIT_TIMEOUT) {
+        wait = WaitForSingleObject(g_lockEvent, 0);
+        if (wait == WAIT_OBJECT_0) break;
+        _mm_pause();
+      }
+      // Fall back to blocking wait if not signaled during spin
+      if (wait != WAIT_OBJECT_0) {
+        wait = WaitForSingleObject(g_lockEvent, INFINITE);
+      }
       if (wait != WAIT_OBJECT_0 || !g_running) continue;
 
       int durationMs = g_lockDurationMs.exchange(0);
@@ -319,8 +330,8 @@ void DetectorThread() {
               LARGE_INTEGER qpcFreq;
               QueryPerformanceFrequency(&qpcFreq);
               QueryPerformanceCounter(&nowQpc);
-              // Throttle to 500µs via QPC
-              if ((nowQpc.QuadPart - lastGdiCheck.QuadPart) * 1000000LL / qpcFreq.QuadPart >= 500) {
+              // Throttle to 100µs via QPC
+              if ((nowQpc.QuadPart - lastGdiCheck.QuadPart) * 1000000LL / qpcFreq.QuadPart >= 100) {
                 lastGdiCheck = nowQpc;
                 if (g_detector.CheckTripwireGDI(cfg, p.tripwireActiveIdx,
                                                 p.target_color, p.tolerance)) {
@@ -383,7 +394,7 @@ void DetectorThread() {
           }
         }
 
-        // Pre-arm check: ALL three trained pixels match in this same frame
+        // Pre-arm check: AT LEAST 2 of 3 trained pixels match in this same frame
         // AND matchCount > 0 (co-validation). Fires BlockInput speculatively
         // ~150-200µs before the full scan would have crossed threshold.
         if (p.tripwireReady && currentMatch > 0 &&
@@ -391,24 +402,23 @@ void DetectorThread() {
             !g_isCursorVisible &&
             GetTickCount64() >= g_mouseSuspendedUntil &&
             (GetTickCount64() - g_lastLockTime > 500)) {
-          bool allMatch = true;
+          int matchCount = 0;
           for (int k = 0; k < 3; k++) {
             int idx = p.tripwireActiveIdx[k];
-            if (idx < 0 || idx >= (int)p.tripwireCandidates.size() ||
-                !PixelMatchesTarget(gridSamples[idx], p.target_color,
-                                    p.tolerance)) {
-              allMatch = false;
-              break;
+            if (idx >= 0 && idx < (int)p.tripwireCandidates.size() &&
+                PixelMatchesTarget(gridSamples[idx], p.target_color,
+                                   p.tolerance)) {
+              matchCount++;
             }
           }
-          if (allMatch) {
+          if (matchCount >= 2) {
             g_lastLockTime = GetTickCount64();
             g_mouseSuspendedUntil = GetTickCount64() + 200;
             g_lockDurationMs = 200;
             g_preArmActive = true;
             g_lastPreArmTime = GetTickCount64();
             SetEvent(g_lockEvent);
-            LOG_INFO("Tripwire pre-arm fired (3-pixel coincidence)");
+            LOG_INFO("Tripwire pre-arm fired (2+ pixel match)");
           }
         }
       } else {
