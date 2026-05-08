@@ -220,6 +220,7 @@ void DetectorThread() {
   RECT cachedMonitorRect = {};
   int cachedScreenIdx = -1;
   int cachedDisplayGen = -1;
+  LARGE_INTEGER frameTime{};
 
   timeBeginPeriod(1);
   while (g_running) {
@@ -284,7 +285,7 @@ void DetectorThread() {
         }
 
         DWORD gridSamples[9] = {0};
-        LARGE_INTEGER frameTime{};
+        frameTime = {};
         ULONGLONG startMs = GetTickCount64();
         int scanResult = g_detector.Scan(cfg, gridSamples,
                                         (const int *)p.tripwireActiveIdx,

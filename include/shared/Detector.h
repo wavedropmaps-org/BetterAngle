@@ -68,7 +68,8 @@ private:
   void EnsureScreenDC();
   void EnsureResources(int w, int h);
   int  ScanBitBlt(const RoiConfig &cfg, DWORD *outGridSamples = nullptr,
-                  const int *tripwireActiveIdx = nullptr, bool tripwireReady = false);
+                  const int *tripwireActiveIdx = nullptr, bool tripwireReady = false,
+                  LARGE_INTEGER *outFrameTime = nullptr);
 };
 
 #endif // DETECTOR_H

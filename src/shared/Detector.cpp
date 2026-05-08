@@ -352,7 +352,7 @@ int FovDetector::Scan(const RoiConfig &cfg, DWORD *outGridSamples,
     return match;
   }
 
-  return ScanBitBlt(cfg, outGridSamples);
+  return ScanBitBlt(cfg, outGridSamples, tripwireActiveIdx, tripwireReady, outFrameTime);
 }
 
 // ---------- one-shot DXGI sample for the colour picker ---------------------
