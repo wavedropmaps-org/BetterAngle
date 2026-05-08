@@ -1,5 +1,8 @@
+### BetterAngle Pro v5.5.162
+- Automated build release.
+
 ### BetterAngle Pro v5.5.161
-- AVX2 fast-path for the pixel-match scanner. `CountMatches` now dispatches to a `_mm256_sad_epu8`-based version on AVX2 CPUs (Haswell 2013+, ~99% of gaming hardware), processing 8 BGRA pixels per instruction. Pre-Haswell CPUs fall back to the existing scalar L2 path automatically (CPUID-gated). Math shifts from per-pixel L2 (`dr²+dg²+db² ≤ tol²`) to per-pair L1 (`|dr|+|dg|+|db| ≤ tol·√3` summed over pairs); calibrated match counts may shift ~5% on edge pixels but the user's `diveGlideMatch` percentage threshold absorbs it. No CMake `/arch:AVX2` flag added — MSVC accepts the intrinsics directly. Expected scan time: ~1-3ms → ~0.5-1.5ms (2-3× faster).
+- AVX2 fast-path for the pixel-match scanner. `CountMatches` now dispatches to a `_mm256_sad_epu8`-based version on AVX2 CPUs (Haswell 2013+, ~99% of gaming hardware), processing 8 BGRA pixels per instruction. Pre-Haswell CPUs fall back to the existing scalar L2 path automatically (CPUID-gated). Math shifts from per-pixel L2 (`dr?+dg?+db? ? tol?`) to per-pair L1 (`|dr|+|dg|+|db| ? tol??3` summed over pairs); calibrated match counts may shift ~5% on edge pixels but the user's `diveGlideMatch` percentage threshold absorbs it. No CMake `/arch:AVX2` flag added ? MSVC accepts the intrinsics directly. Expected scan time: ~1-3ms ? ~0.5-1.5ms (2-3? faster).
 
 ### BetterAngle Pro v5.5.160
 - Automated build release.
