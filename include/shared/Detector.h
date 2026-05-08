@@ -21,8 +21,11 @@ public:
   // sampled inside the ROI. Used by the tripwire learner. If null, skipped.
   // tripwireActiveIdx: if non-null, checks if all 3 pixels (at these indices)
   // match target colour; if so, returns -1000 (skip AVX2, pre-arm fires early).
+  // outFrameTime (optional): filled with DXGI LastPresentTime if DXGI path succeeds;
+  // set to {0} if BitBlt fallback. Used for retroactive angle correction.
   int Scan(const RoiConfig &cfg, DWORD *outGridSamples = nullptr,
-           const int *tripwireActiveIdx = nullptr, bool tripwireReady = false);
+           const int *tripwireActiveIdx = nullptr, bool tripwireReady = false,
+           LARGE_INTEGER *outFrameTime = nullptr);
 
   // Reinit the DXGI duplication for the given monitor index. Strict — if the
   // monitor's output isn't reachable from this adapter, m_dxgiOk stays false
@@ -36,6 +39,13 @@ public:
   // GDI/DXGI byte drift). Returns false if DXGI can't satisfy the request —
   // caller should fall back to BitBlt.
   bool SamplePixelDXGI(int monX, int monY, COLORREF &outColor);
+
+  // Sub-frame tripwire check via GetPixel(). Samples the 3 pixels at
+  // tripwireActiveIdx positions using GDI. Returns true if all 3 match target
+  // colour within tolerance. Called between DXGI frames to detect mid-frame FOV changes.
+  bool CheckTripwireGDI(const RoiConfig &cfg,
+                        const int *tripwireActiveIdx,
+                        COLORREF target, int tolerance);
 
 private:
   // DXGI path

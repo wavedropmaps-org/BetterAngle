@@ -141,7 +141,7 @@ static bool PixelMatchesTarget(DWORD pix, COLORREF target, int tolerance) {
 // Promote learning to "ready" once we have >=10 events and >=3 candidates
 // with 100% hit rate AND <0.1% noise rate. Returns true on activation.
 static bool TryActivateTripwire(Profile &p) {
-  if (p.tripwireEvents < 10) return false;
+  if (p.tripwireEvents < 5) return false;
   if (p.tripwireCandidates.size() < 3) return false;
 
   int qualifiedIdx[9];
@@ -150,7 +150,7 @@ static bool TryActivateTripwire(Profile &p) {
   for (int i = 0; i < (int)p.tripwireCandidates.size() && qualifiedCount < 9; i++) {
     auto &c = p.tripwireCandidates[i];
     if (c.hits != p.tripwireEvents) continue;        // 100% hit rate gate
-    if (c.idleSamples < 1000) continue;              // need enough idle samples
+    if (c.idleSamples < 500) continue;               // need enough idle samples
     if (c.noise * 1000 > c.idleSamples) continue;    // <0.1% noise rate gate
     qualifiedIdx[qualifiedCount] = i;
     qualifiedScore[qualifiedCount] =
@@ -284,10 +284,12 @@ void DetectorThread() {
         }
 
         DWORD gridSamples[9] = {0};
+        LARGE_INTEGER frameTime{};
         ULONGLONG startMs = GetTickCount64();
         int scanResult = g_detector.Scan(cfg, gridSamples,
                                         (const int *)p.tripwireActiveIdx,
-                                        p.tripwireReady);
+                                        p.tripwireReady,
+                                        &frameTime);
         ULONGLONG endMs = GetTickCount64();
         ULONGLONG scanMs = endMs - startMs;
         g_detectionDelayMs = scanMs;
@@ -305,6 +307,31 @@ void DetectorThread() {
             g_lastPreArmTime = GetTickCount64();
             SetEvent(g_lockEvent);
             LOG_INFO("Tripwire pre-arm fired (3-pixel coincidence, early)");
+          } else if (scanResult == -1) {
+            // Sub-frame GDI tripwire check between DXGI frames (v5.5.165)
+            if (p.tripwireReady && currentFortniteFocused && !g_isCursorVisible &&
+                !g_blockInputActive.load() && !g_preArmActive.load() &&
+                GetTickCount64() >= g_mouseSuspendedUntil &&
+                (GetTickCount64() - g_lastLockTime > 500)) {
+              static LARGE_INTEGER lastGdiCheck{};
+              LARGE_INTEGER nowQpc;
+              LARGE_INTEGER qpcFreq;
+              QueryPerformanceFrequency(&qpcFreq);
+              QueryPerformanceCounter(&nowQpc);
+              // Throttle to 500µs via QPC
+              if ((nowQpc.QuadPart - lastGdiCheck.QuadPart) * 1000000LL / qpcFreq.QuadPart >= 500) {
+                lastGdiCheck = nowQpc;
+                if (g_detector.CheckTripwireGDI(cfg, p.tripwireActiveIdx,
+                                                p.target_color, p.tolerance)) {
+                  g_lastLockTime = GetTickCount64();
+                  g_mouseSuspendedUntil = g_lastLockTime + 200;
+                  g_lockDurationMs = 200;
+                  g_preArmActive = true;
+                  SetEvent(g_lockEvent);
+                  LOG_INFO("Sub-frame GDI tripwire fired");
+                }
+              }
+            }
           }
           _mm_pause();
           continue;
@@ -427,9 +454,11 @@ void DetectorThread() {
         g_mouseSuspendedUntil = 0;
       }
 
+      if (nowDiving != lastDiving) {
+        g_logic.ApplyRetroCorrection(frameTime, nowDiving);
+      }
       lastDiving = nowDiving;
       g_isDiving = nowDiving;
-      g_logic.SetDivingState(nowDiving);
     }
     // Spin (peg one core) only while actively scanning; otherwise idle politely.
     // _mm_pause is a CPU hint that yields hyperthread cycles during a spin loop.

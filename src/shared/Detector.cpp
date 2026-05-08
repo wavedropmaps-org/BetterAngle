@@ -203,7 +203,8 @@ void FovDetector::ReinitDisplay(int monitorIndex) {
 // ---------- main scan ------------------------------------------------------
 
 int FovDetector::Scan(const RoiConfig &cfg, DWORD *outGridSamples,
-                      const int *tripwireActiveIdx, bool tripwireReady) {
+                      const int *tripwireActiveIdx, bool tripwireReady,
+                      LARGE_INTEGER *outFrameTime) {
   if (cfg.w <= 0 || cfg.h <= 0) return 0;
 
   if (m_dxgiOk) {
@@ -211,6 +212,8 @@ int FovDetector::Scan(const RoiConfig &cfg, DWORD *outGridSamples,
     DXGI_OUTDUPL_FRAME_INFO fi{};
     IDXGIResource *res = nullptr;
     HRESULT hr = m_duplication->AcquireNextFrame(0, &fi, &res);
+
+    if (outFrameTime) *outFrameTime = fi.LastPresentTime;
 
     if (hr == DXGI_ERROR_WAIT_TIMEOUT) {
       // Bounded pause burst: caps the AcquireNextFrame poll rate at ~1M/s so
@@ -225,7 +228,7 @@ int FovDetector::Scan(const RoiConfig &cfg, DWORD *outGridSamples,
       // Device lost, mode change, or other failure. Don't recreate here
       // (that would race a concurrent SamplePixelDXGI call on main thread).
       // The next display change / screen-index change will trigger ReinitDisplay.
-      return ScanBitBlt(cfg, outGridSamples, tripwireActiveIdx, tripwireReady);
+      return ScanBitBlt(cfg, outGridSamples, tripwireActiveIdx, tripwireReady, outFrameTime);
     }
 
     ID3D11Texture2D *desktopTex = nullptr;
@@ -233,7 +236,7 @@ int FovDetector::Scan(const RoiConfig &cfg, DWORD *outGridSamples,
     res->Release();
     if (!desktopTex) {
       m_duplication->ReleaseFrame();
-      return ScanBitBlt(cfg, outGridSamples, tripwireActiveIdx, tripwireReady);
+      return ScanBitBlt(cfg, outGridSamples, tripwireActiveIdx, tripwireReady, outFrameTime);
     }
 
     D3D11_TEXTURE2D_DESC desc;
@@ -244,7 +247,7 @@ int FovDetector::Scan(const RoiConfig &cfg, DWORD *outGridSamples,
         desc.Format != DXGI_FORMAT_B8G8R8A8_UNORM_SRGB) {
       desktopTex->Release();
       m_duplication->ReleaseFrame();
-      return ScanBitBlt(cfg, outGridSamples, tripwireActiveIdx, tripwireReady);
+      return ScanBitBlt(cfg, outGridSamples, tripwireActiveIdx, tripwireReady, outFrameTime);
     }
 
     // ROI must lie within the monitor texture (cfg.x/y are monitor-relative).
@@ -253,7 +256,7 @@ int FovDetector::Scan(const RoiConfig &cfg, DWORD *outGridSamples,
         (UINT)(cfg.y + cfg.h) > desc.Height) {
       desktopTex->Release();
       m_duplication->ReleaseFrame();
-      return ScanBitBlt(cfg, outGridSamples, tripwireActiveIdx, tripwireReady);
+      return ScanBitBlt(cfg, outGridSamples, tripwireActiveIdx, tripwireReady, outFrameTime);
     }
 
     if (!m_stagingTex || m_stagingW != cfg.w || m_stagingH != cfg.h) {
@@ -284,7 +287,7 @@ int FovDetector::Scan(const RoiConfig &cfg, DWORD *outGridSamples,
 
     D3D11_MAPPED_SUBRESOURCE mapped{};
     hr = m_d3dCtx->Map(m_stagingTex, 0, D3D11_MAP_READ, 0, &mapped);
-    if (FAILED(hr)) return ScanBitBlt(cfg, outGridSamples);
+    if (FAILED(hr)) return ScanBitBlt(cfg, outGridSamples, tripwireActiveIdx, tripwireReady, outFrameTime);
 
     int tr = (int)GetRValue(cfg.target);
     int tg = (int)GetGValue(cfg.target);
@@ -464,8 +467,10 @@ void FovDetector::EnsureResources(int w, int h) {
 }
 
 int FovDetector::ScanBitBlt(const RoiConfig &cfg, DWORD *outGridSamples,
-                            const int *tripwireActiveIdx, bool tripwireReady) {
+                            const int *tripwireActiveIdx, bool tripwireReady,
+                            LARGE_INTEGER *outFrameTime) {
   g_lastScanUsedDxgi = false;
+  if (outFrameTime) outFrameTime->QuadPart = 0;  // BitBlt has no frame timestamp
   EnsureResources(cfg.w, cfg.h);
   // BitBlt source is GetDC(NULL) = full virtual desktop, so screen-space coords.
   BitBlt(m_hdcMem, 0, 0, cfg.w, cfg.h, m_hdcScreen,
@@ -522,4 +527,47 @@ int FovDetector::ScanBitBlt(const RoiConfig &cfg, DWORD *outGridSamples,
     match += CountMatches(rowPtr, cfg.w, tr, tg, tb, cfg.tolerance);
   }
   return match;
+}
+
+bool FovDetector::CheckTripwireGDI(const RoiConfig &cfg,
+                                    const int *tripwireActiveIdx,
+                                    COLORREF target, int tolerance) {
+  if (!tripwireActiveIdx) return false;
+
+  HDC hdc = GetDC(NULL);
+  if (!hdc) return false;
+
+  // 3x3 grid cell centres (same layout as Scan())
+  struct { int x, y; } cells[9];
+  for (int gy = 0; gy < 3; gy++) {
+    for (int gx = 0; gx < 3; gx++) {
+      cells[gy * 3 + gx].x = cfg.monitorOffsetX + cfg.x + (cfg.w * (gx * 2 + 1)) / 6;
+      cells[gy * 3 + gx].y = cfg.monitorOffsetY + cfg.y + (cfg.h * (gy * 2 + 1)) / 6;
+    }
+  }
+
+  int tr = GetRValue(target), tg = GetGValue(target), tb = GetBValue(target);
+  int tolSq = tolerance * tolerance;
+
+  bool allMatch = true;
+  for (int k = 0; k < 3 && allMatch; k++) {
+    int idx = tripwireActiveIdx[k];
+    if (idx < 0 || idx >= 9) {
+      allMatch = false;
+      break;
+    }
+    COLORREF c = GetPixel(hdc, cells[idx].x, cells[idx].y);
+    if (c == CLR_INVALID) {
+      allMatch = false;
+      break;
+    }
+    int r = GetRValue(c), g = GetGValue(c), b = GetBValue(c);
+    int dr = r - tr, dg = g - tg, db = b - tb;
+    if ((dr * dr + dg * dg + db * db) > tolSq) {
+      allMatch = false;
+    }
+  }
+
+  ReleaseDC(NULL, hdc);
+  return allMatch;
 }
