@@ -1,3 +1,6 @@
+### BetterAngle Pro v5.5.177
+- **fix: Alt-tab BlockInput cooldown guard (v5.5.177).** Added a 500ms cooldown check to the alt-tab focus-gain BlockInput path in `FocusMonitorThread`. Previously, if a FOV-edge lock (200–250ms) had just released and the user alt-tabbed back within the same window, the alt-tab path could fire a second 400ms BlockInput immediately after, chaining freezes with no gap. The fix mirrors the same `(now - g_lastLockTime > 500)` guard already present on all detector-side lock paths. Alt-tab BlockInput still fires normally on every real alt-tab return; the guard only skips it when a prior lock ended less than 500ms ago.
+
 ### BetterAngle Pro v5.5.176
 - Automated build release.
 

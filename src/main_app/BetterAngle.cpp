@@ -127,7 +127,8 @@ void FocusMonitorThread() {
     // — locking on those eats keys during normal gameplay.
     if (!lastFortniteFocused && currentFortniteFocused) {
       ULONGLONG unfocusedMs = GetTickCount64() - focusLostTime;
-      if (unfocusedMs >= 500 && !g_blockInputActive.load()) {
+      if (unfocusedMs >= 500 && !g_blockInputActive.load() &&
+          (GetTickCount64() - g_lastLockTime.load() > 500)) {
         g_lockDurationMs = 400;
         SetEvent(g_lockEvent);
         LOG_INFO("Alt-tab focus detected (400ms BlockInput for FOV stabilization)");
