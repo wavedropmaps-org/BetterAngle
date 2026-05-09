@@ -1,3 +1,7 @@
+### BetterAngle Pro v5.5.175
+- **CRITICAL FIX: Permanent input lock resolved.** The v5.5.171 optimization moved `BlockInput(TRUE)` into the DetectorThread for speed, but Windows enforces **thread affinity** on `BlockInput` — only the thread that locked can unlock. Since `BlockInput(FALSE)` remained in the worker thread, it silently failed and input stayed permanently frozen (spacebar, movement, alt-tab all broken). Fix: restored both `BlockInput(TRUE)` and `BlockInput(FALSE)` to the same worker thread. All v5.5.173 performance optimizations (early-exit scan, cached syscalls, throttled cursor check) are preserved.
+- **Fixed focus-lost emergency unlock.** The `FocusMonitorThread` was also calling `BlockInput(FALSE)` from the wrong thread on alt-tab. Replaced with a signal (`g_lockDurationMs = 0`) that causes the worker thread's sleep loop to exit within 10ms and call `BlockInput(FALSE)` from the correct thread.
+
 ### BetterAngle Pro v5.5.174
 - Automated build release.
 

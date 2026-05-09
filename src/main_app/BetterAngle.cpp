@@ -67,8 +67,10 @@ void StartBlockInputWorker() {
       int durationMs = g_lockDurationMs.exchange(0);
       if (durationMs <= 0) continue;
 
-      // BlockInput(TRUE) is now called instantaneously by the DetectorThread 
-      // just before it signals g_lockEvent, bypassing thread-wake latency.
+      // BlockInput(TRUE/FALSE) MUST both execute on the SAME thread.
+      // Windows thread affinity rule: only the thread that blocked can unblock.
+      g_blockInputActive = true;
+      BlockInput(TRUE);
       int ticks = (durationMs + 9) / 10;
       for (int i = 0; i < ticks && IsFortniteForeground(); i++) Sleep(10);
       BlockInput(FALSE);
@@ -106,12 +108,15 @@ void FocusMonitorThread() {
     bool currentFortniteFocused = IsFortniteForeground();
     g_fortniteFocusedCache = currentFortniteFocused;
 
-    // Focus LOST edge: abort any active BlockInput immediately
+    // Focus LOST edge: abort any active BlockInput via the worker thread.
+    // We cannot call BlockInput(FALSE) here because Windows thread affinity
+    // rule means only the worker thread (which called BlockInput(TRUE)) can
+    // successfully unblock. Instead, zero the duration so the worker's
+    // Sleep loop exits on the next 10ms tick and calls BlockInput(FALSE).
     if (lastFortniteFocused && !currentFortniteFocused) {
       focusLostTime = GetTickCount64();
       if (g_blockInputActive.load()) {
-        BlockInput(FALSE);
-        g_blockInputActive = false;
+        g_lockDurationMs = 0;  // Signal worker to release immediately
       }
       g_preArmActive = false;
       g_mouseSuspendedUntil = 0;
@@ -124,8 +129,6 @@ void FocusMonitorThread() {
       ULONGLONG unfocusedMs = GetTickCount64() - focusLostTime;
       if (unfocusedMs >= 500 && !g_blockInputActive.load()) {
         g_lockDurationMs = 400;
-        BlockInput(TRUE);
-        g_blockInputActive = true;
         SetEvent(g_lockEvent);
         LOG_INFO("Alt-tab focus detected (400ms BlockInput for FOV stabilization)");
       }
@@ -338,8 +341,6 @@ void DetectorThread() {
             g_lockDurationMs = 200;
             g_preArmActive = true;
             g_lastPreArmTime = now;
-            BlockInput(TRUE);
-            g_blockInputActive = true;
             SetEvent(g_lockEvent);
             LOG_INFO("Tripwire pre-arm fired (3-pixel coincidence, early)");
           } else if (scanResult == -1) {
@@ -360,8 +361,6 @@ void DetectorThread() {
                   g_mouseSuspendedUntil = now + 200;
                   g_lockDurationMs = 200;
                   g_preArmActive = true;
-                  BlockInput(TRUE);
-                  g_blockInputActive = true;
                   SetEvent(g_lockEvent);
                   LOG_INFO("Sub-frame GDI tripwire fired");
                 }
@@ -439,8 +438,6 @@ void DetectorThread() {
             g_lockDurationMs = 200;
             g_preArmActive = true;
             g_lastPreArmTime = now;
-            BlockInput(TRUE);
-            g_blockInputActive = true;
             SetEvent(g_lockEvent);
             LOG_INFO("Tripwire pre-arm fired (2+ pixel match)");
           }
@@ -469,8 +466,6 @@ void DetectorThread() {
           g_lastLockTime = now;
           g_mouseSuspendedUntil = now + 200;
           g_lockDurationMs = 200;
-          BlockInput(TRUE);
-          g_blockInputActive = true;
           SetEvent(g_lockEvent);
           LOG_INFO("Transition: glide->dive (200ms BlockInput)");
         }
@@ -480,8 +475,6 @@ void DetectorThread() {
           g_lastLockTime = now;
           g_mouseSuspendedUntil = now + 250;
           g_lockDurationMs = 250;
-          BlockInput(TRUE);
-          g_blockInputActive = true;
           SetEvent(g_lockEvent);
           LOG_INFO("Transition: dive->glide (250ms BlockInput)");
         }
