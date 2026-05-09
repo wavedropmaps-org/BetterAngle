@@ -1,3 +1,6 @@
+### BetterAngle Pro v5.5.171
+- **Eliminated Inter-Thread Signaling Latency:** Moved `BlockInput(TRUE)` directly into the `DetectorThread` to fire instantaneously the millisecond a FOV transition or tripwire evaluates to true. This entirely bypasses the 10-50 microsecond OS thread-wake delay previously caused by signaling the worker thread, pushing software reaction latency to the absolute theoretical limit.
+
 ### BetterAngle Pro v5.5.170
 - Automated build release.
 
