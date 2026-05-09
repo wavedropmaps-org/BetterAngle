@@ -25,7 +25,8 @@ public:
   // set to {0} if BitBlt fallback. Used for retroactive angle correction.
   int Scan(const RoiConfig &cfg, DWORD *outGridSamples = nullptr,
            const int *tripwireActiveIdx = nullptr, bool tripwireReady = false,
-           LARGE_INTEGER *outFrameTime = nullptr);
+           LARGE_INTEGER *outFrameTime = nullptr,
+           int earlyExitThreshold = 0);
 
   // Reinit the DXGI duplication for the given monitor index. Strict — if the
   // monitor's output isn't reachable from this adapter, m_dxgiOk stays false
@@ -69,7 +70,8 @@ private:
   void EnsureResources(int w, int h);
   int  ScanBitBlt(const RoiConfig &cfg, DWORD *outGridSamples = nullptr,
                   const int *tripwireActiveIdx = nullptr, bool tripwireReady = false,
-                  LARGE_INTEGER *outFrameTime = nullptr);
+                  LARGE_INTEGER *outFrameTime = nullptr,
+                  int earlyExitThreshold = 0);
 };
 
 #endif // DETECTOR_H

@@ -235,6 +235,13 @@ void DetectorThread() {
   int cachedDisplayGen = -1;
   LARGE_INTEGER frameTime{};
 
+  // Cache QPC frequency once — it never changes at runtime (v5.5.173)
+  LARGE_INTEGER qpcFreqCached;
+  QueryPerformanceFrequency(&qpcFreqCached);
+
+  // Throttle IsCursorCurrentlyVisible() to every ~5ms (v5.5.173)
+  ULONGLONG lastCursorCheckMs = 0;
+
   timeBeginPeriod(1);
   while (g_running) {
     if (!g_allProfiles.empty() && g_currentSelection == NONE) {
@@ -246,8 +253,19 @@ void DetectorThread() {
       g_requiredMatchCount =
           (int)((p.diveGlideMatch / 100.0f) * (p.roi_w * p.roi_h));
 
+      // Cache GetTickCount64() once per iteration to avoid ~10+ redundant
+      // kernel transitions per spin cycle (~15-25ns each) (v5.5.173)
+      ULONGLONG now = GetTickCount64();
+
       bool currentFortniteFocused = g_fortniteFocusedCache.load();
-      g_isCursorVisible = IsCursorCurrentlyVisible();
+
+      // Throttle IsCursorCurrentlyVisible() to every ~5ms — the cursor state
+      // only changes when the user opens inventory/map, not every microsecond.
+      // Saves thousands of GetCursorInfo() syscalls per second (v5.5.173)
+      if (now - lastCursorCheckMs >= 5) {
+        g_isCursorVisible = IsCursorCurrentlyVisible();
+        lastCursorCheckMs = now;
+      }
 
       // Only scan ROI when Fortnite is the foreground window
       if (currentFortniteFocused) {
@@ -303,7 +321,8 @@ void DetectorThread() {
         int scanResult = g_detector.Scan(cfg, gridSamples,
                                         (const int *)p.tripwireActiveIdx,
                                         p.tripwireReady,
-                                        &frameTime);
+                                        &frameTime,
+                                        g_requiredMatchCount.load());
         ULONGLONG endMs = GetTickCount64();
         ULONGLONG scanMs = endMs - startMs;
         g_detectionDelayMs = scanMs;
@@ -314,11 +333,11 @@ void DetectorThread() {
         if (scanResult < 0) {
           if (scanResult == -1000) {
             // Tripwire pre-arm fired before AVX2 loop
-            g_lastLockTime = GetTickCount64();
-            g_mouseSuspendedUntil = GetTickCount64() + 200;
+            g_lastLockTime = now;
+            g_mouseSuspendedUntil = now + 200;
             g_lockDurationMs = 200;
             g_preArmActive = true;
-            g_lastPreArmTime = GetTickCount64();
+            g_lastPreArmTime = now;
             BlockInput(TRUE);
             g_blockInputActive = true;
             SetEvent(g_lockEvent);
@@ -327,20 +346,18 @@ void DetectorThread() {
             // Sub-frame GDI tripwire check between DXGI frames (v5.5.165)
             if (p.tripwireReady && currentFortniteFocused && !g_isCursorVisible &&
                 !g_blockInputActive.load() && !g_preArmActive.load() &&
-                GetTickCount64() >= g_mouseSuspendedUntil &&
-                (GetTickCount64() - g_lastLockTime > 500)) {
+                now >= g_mouseSuspendedUntil &&
+                (now - g_lastLockTime > 500)) {
               static LARGE_INTEGER lastGdiCheck{};
               LARGE_INTEGER nowQpc;
-              LARGE_INTEGER qpcFreq;
-              QueryPerformanceFrequency(&qpcFreq);
               QueryPerformanceCounter(&nowQpc);
-              // Throttle to 100µs via QPC
-              if ((nowQpc.QuadPart - lastGdiCheck.QuadPart) * 1000000LL / qpcFreq.QuadPart >= 100) {
+              // Throttle to 100µs via QPC (using cached frequency, v5.5.173)
+              if ((nowQpc.QuadPart - lastGdiCheck.QuadPart) * 1000000LL / qpcFreqCached.QuadPart >= 100) {
                 lastGdiCheck = nowQpc;
                 if (g_detector.CheckTripwireGDI(cfg, p.tripwireActiveIdx,
                                                 p.target_color, p.tolerance)) {
-                  g_lastLockTime = GetTickCount64();
-                  g_mouseSuspendedUntil = g_lastLockTime + 200;
+                  g_lastLockTime = now;
+                  g_mouseSuspendedUntil = now + 200;
                   g_lockDurationMs = 200;
                   g_preArmActive = true;
                   BlockInput(TRUE);
@@ -365,7 +382,6 @@ void DetectorThread() {
 
         // Peak match tracking (2s decay window)
         int currentMatch = g_matchCount.load();
-        ULONGLONG now = GetTickCount64();
         if (now - peakMatchTimestamp > 2000) {
           g_peakMatchCount = currentMatch;
           peakMatchTimestamp = now;
@@ -406,8 +422,8 @@ void DetectorThread() {
         if (p.tripwireReady && currentMatch > 0 &&
             !g_blockInputActive.load() && !g_preArmActive.load() &&
             !g_isCursorVisible &&
-            GetTickCount64() >= g_mouseSuspendedUntil &&
-            (GetTickCount64() - g_lastLockTime > 500)) {
+            now >= g_mouseSuspendedUntil &&
+            (now - g_lastLockTime > 500)) {
           int matchCount = 0;
           for (int k = 0; k < 3; k++) {
             int idx = p.tripwireActiveIdx[k];
@@ -418,11 +434,11 @@ void DetectorThread() {
             }
           }
           if (matchCount >= 2) {
-            g_lastLockTime = GetTickCount64();
-            g_mouseSuspendedUntil = GetTickCount64() + 200;
+            g_lastLockTime = now;
+            g_mouseSuspendedUntil = now + 200;
             g_lockDurationMs = 200;
             g_preArmActive = true;
-            g_lastPreArmTime = GetTickCount64();
+            g_lastPreArmTime = now;
             BlockInput(TRUE);
             g_blockInputActive = true;
             SetEvent(g_lockEvent);
@@ -446,12 +462,12 @@ void DetectorThread() {
       // Only trigger input blocking locks if Fortnite is actually focused AND the cursor is hidden.
       // This prevents the mouse from locking up on the desktop if the user tabs out,
       // or if they open the in-game map/inventory (which shows the cursor and obscures the ROI).
-      if (currentFortniteFocused && !g_isCursorVisible && GetTickCount64() >= g_mouseSuspendedUntil) {
+      if (currentFortniteFocused && !g_isCursorVisible && now >= g_mouseSuspendedUntil) {
         // Edge: Gliding -> Diving (Nitro)
         if (nowDiving && !lastDiving && !g_blockInputActive.load() &&
-            (GetTickCount64() - g_lastLockTime > 500)) {
-          g_lastLockTime = GetTickCount64();
-          g_mouseSuspendedUntil = GetTickCount64() + 200;
+            (now - g_lastLockTime > 500)) {
+          g_lastLockTime = now;
+          g_mouseSuspendedUntil = now + 200;
           g_lockDurationMs = 200;
           BlockInput(TRUE);
           g_blockInputActive = true;
@@ -460,9 +476,9 @@ void DetectorThread() {
         }
         // Edge: Diving -> Gliding (Nitro)
         else if (!nowDiving && lastDiving && !g_blockInputActive.load() &&
-                 (GetTickCount64() - g_lastLockTime > 500)) {
-          g_lastLockTime = GetTickCount64();
-          g_mouseSuspendedUntil = GetTickCount64() + 250;
+                 (now - g_lastLockTime > 500)) {
+          g_lastLockTime = now;
+          g_mouseSuspendedUntil = now + 250;
           g_lockDurationMs = 250;
           BlockInput(TRUE);
           g_blockInputActive = true;
@@ -472,8 +488,7 @@ void DetectorThread() {
       }
 
       // Reset UI tracker once timer expires
-      if (g_mouseSuspendedUntil > 0 &&
-          GetTickCount64() >= g_mouseSuspendedUntil) {
+      if (g_mouseSuspendedUntil > 0 && now >= g_mouseSuspendedUntil) {
         g_mouseSuspendedUntil = 0;
       }
 

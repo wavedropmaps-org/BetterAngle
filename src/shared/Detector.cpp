@@ -204,7 +204,8 @@ void FovDetector::ReinitDisplay(int monitorIndex) {
 
 int FovDetector::Scan(const RoiConfig &cfg, DWORD *outGridSamples,
                       const int *tripwireActiveIdx, bool tripwireReady,
-                      LARGE_INTEGER *outFrameTime) {
+                      LARGE_INTEGER *outFrameTime,
+                      int earlyExitThreshold) {
   if (cfg.w <= 0 || cfg.h <= 0) return 0;
 
   if (m_dxgiOk) {
@@ -228,7 +229,7 @@ int FovDetector::Scan(const RoiConfig &cfg, DWORD *outGridSamples,
       // Device lost, mode change, or other failure. Don't recreate here
       // (that would race a concurrent SamplePixelDXGI call on main thread).
       // The next display change / screen-index change will trigger ReinitDisplay.
-      return ScanBitBlt(cfg, outGridSamples, tripwireActiveIdx, tripwireReady, outFrameTime);
+      return ScanBitBlt(cfg, outGridSamples, tripwireActiveIdx, tripwireReady, outFrameTime, earlyExitThreshold);
     }
 
     ID3D11Texture2D *desktopTex = nullptr;
@@ -236,7 +237,7 @@ int FovDetector::Scan(const RoiConfig &cfg, DWORD *outGridSamples,
     res->Release();
     if (!desktopTex) {
       m_duplication->ReleaseFrame();
-      return ScanBitBlt(cfg, outGridSamples, tripwireActiveIdx, tripwireReady, outFrameTime);
+      return ScanBitBlt(cfg, outGridSamples, tripwireActiveIdx, tripwireReady, outFrameTime, earlyExitThreshold);
     }
 
     D3D11_TEXTURE2D_DESC desc;
@@ -247,7 +248,7 @@ int FovDetector::Scan(const RoiConfig &cfg, DWORD *outGridSamples,
         desc.Format != DXGI_FORMAT_B8G8R8A8_UNORM_SRGB) {
       desktopTex->Release();
       m_duplication->ReleaseFrame();
-      return ScanBitBlt(cfg, outGridSamples, tripwireActiveIdx, tripwireReady, outFrameTime);
+      return ScanBitBlt(cfg, outGridSamples, tripwireActiveIdx, tripwireReady, outFrameTime, earlyExitThreshold);
     }
 
     // ROI must lie within the monitor texture (cfg.x/y are monitor-relative).
@@ -256,7 +257,7 @@ int FovDetector::Scan(const RoiConfig &cfg, DWORD *outGridSamples,
         (UINT)(cfg.y + cfg.h) > desc.Height) {
       desktopTex->Release();
       m_duplication->ReleaseFrame();
-      return ScanBitBlt(cfg, outGridSamples, tripwireActiveIdx, tripwireReady, outFrameTime);
+      return ScanBitBlt(cfg, outGridSamples, tripwireActiveIdx, tripwireReady, outFrameTime, earlyExitThreshold);
     }
 
     if (!m_stagingTex || m_stagingW != cfg.w || m_stagingH != cfg.h) {
@@ -287,7 +288,7 @@ int FovDetector::Scan(const RoiConfig &cfg, DWORD *outGridSamples,
 
     D3D11_MAPPED_SUBRESOURCE mapped{};
     hr = m_d3dCtx->Map(m_stagingTex, 0, D3D11_MAP_READ, 0, &mapped);
-    if (FAILED(hr)) return ScanBitBlt(cfg, outGridSamples, tripwireActiveIdx, tripwireReady, outFrameTime);
+    if (FAILED(hr)) return ScanBitBlt(cfg, outGridSamples, tripwireActiveIdx, tripwireReady, outFrameTime, earlyExitThreshold);
 
     int tr = (int)GetRValue(cfg.target);
     int tg = (int)GetGValue(cfg.target);
@@ -343,13 +344,15 @@ int FovDetector::Scan(const RoiConfig &cfg, DWORD *outGridSamples,
       const DWORD *rowPtr = reinterpret_cast<const DWORD *>(
           static_cast<const BYTE *>(mapped.pData) + row * mapped.RowPitch);
       match += CountMatches(rowPtr, cfg.w, tr, tg, tb, cfg.tolerance);
+      // Early-exit: stop scanning once we know we've crossed threshold (v5.5.173)
+      if (earlyExitThreshold > 0 && match >= earlyExitThreshold) break;
     }
 
     m_d3dCtx->Unmap(m_stagingTex, 0);
     return match;
   }
 
-  return ScanBitBlt(cfg, outGridSamples, tripwireActiveIdx, tripwireReady, outFrameTime);
+  return ScanBitBlt(cfg, outGridSamples, tripwireActiveIdx, tripwireReady, outFrameTime, earlyExitThreshold);
 }
 
 // ---------- one-shot DXGI sample for the colour picker ---------------------
@@ -465,7 +468,8 @@ void FovDetector::EnsureResources(int w, int h) {
 
 int FovDetector::ScanBitBlt(const RoiConfig &cfg, DWORD *outGridSamples,
                             const int *tripwireActiveIdx, bool tripwireReady,
-                            LARGE_INTEGER *outFrameTime) {
+                            LARGE_INTEGER *outFrameTime,
+                            int earlyExitThreshold) {
   g_lastScanUsedDxgi = false;
   if (outFrameTime) outFrameTime->QuadPart = 0;  // BitBlt has no frame timestamp
   EnsureResources(cfg.w, cfg.h);
@@ -519,6 +523,8 @@ int FovDetector::ScanBitBlt(const RoiConfig &cfg, DWORD *outGridSamples,
   for (int row = 0; row < cfg.h; row++) {
     const DWORD *rowPtr = reinterpret_cast<const DWORD *>(m_pixels) + row * cfg.w;
     match += CountMatches(rowPtr, cfg.w, tr, tg, tb, cfg.tolerance);
+    // Early-exit: stop scanning once we know we've crossed threshold (v5.5.173)
+    if (earlyExitThreshold > 0 && match >= earlyExitThreshold) break;
   }
   return match;
 }
