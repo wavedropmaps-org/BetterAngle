@@ -1,8 +1,11 @@
+### BetterAngle Pro v5.5.174
+- Automated build release.
+
 ### BetterAngle Pro v5.5.173
 - **Early-exit AVX2 scan loop.** The pixel-matching scan now breaks out the instant the match count crosses `requiredMatchCount`, instead of scanning every remaining row. On frames where the FOV indicator is clearly active, this cuts scan time by ~50% on average. Applied to both DXGI and BitBlt paths.
-- **Cached `GetTickCount64()` per DetectorThread iteration.** A single `now` variable replaces ~12 redundant kernel calls per spin cycle. Each call was a ~15-25ns kernel transition — total savings ~150-300ns per iteration, thousands of times per second.
+- **Cached `GetTickCount64()` per DetectorThread iteration.** A single `now` variable replaces ~12 redundant kernel calls per spin cycle. Each call was a ~15-25ns kernel transition ? total savings ~150-300ns per iteration, thousands of times per second.
 - **Throttled `IsCursorCurrentlyVisible()` to every 5ms.** Previously called on every spin iteration (potentially hundreds of thousands of times/sec), this `GetCursorInfo()` syscall now fires only when the cursor state could realistically change. Eliminates massive syscall overhead with zero behavioral impact.
-- **Cached `QueryPerformanceFrequency` at thread start.** The sub-frame GDI tripwire path was calling `QueryPerformanceFrequency()` on every DXGI timeout — a value that never changes at runtime. Now computed once. Saves ~20ns per sub-frame poll cycle.
+- **Cached `QueryPerformanceFrequency` at thread start.** The sub-frame GDI tripwire path was calling `QueryPerformanceFrequency()` on every DXGI timeout ? a value that never changes at runtime. Now computed once. Saves ~20ns per sub-frame poll cycle.
 
 ### BetterAngle Pro v5.5.172
 - Automated build release.
