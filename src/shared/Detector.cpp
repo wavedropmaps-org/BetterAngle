@@ -140,6 +140,7 @@ FovDetector::~FovDetector() {
 // ---------- DXGI init / teardown -------------------------------------------
 
 void FovDetector::ReleaseDXGI() {
+  if (m_tripwireStagingTex) { m_tripwireStagingTex->Release(); m_tripwireStagingTex = nullptr; }
   if (m_stagingTex)  { m_stagingTex->Release();  m_stagingTex  = nullptr; }
   if (m_duplication) { m_duplication->Release(); m_duplication = nullptr; }
   if (m_d3dCtx)      { m_d3dCtx->Release();      m_d3dCtx      = nullptr; }
@@ -274,6 +275,64 @@ int FovDetector::Scan(const RoiConfig &cfg, DWORD *outGridSamples,
       m_d3dDevice->CreateTexture2D(&sd, nullptr, &m_stagingTex);
       m_stagingW = cfg.w;
       m_stagingH = cfg.h;
+    }
+
+    // Phase 1 (v5.5.178): copy only the 3 trained tripwire pixels into a 3×1
+    // staging texture. Map stall is ~1-5µs vs ~50-200µs for the full ROI.
+    // If 2-of-3 match → skip the full ROI copy entirely and fire immediately.
+    // Falls through to the full copy when tripwire isn't ready, allocation
+    // fails, or the fast check doesn't match.
+    if (tripwireReady && tripwireActiveIdx &&
+        tripwireActiveIdx[0] >= 0 && tripwireActiveIdx[1] >= 0 && tripwireActiveIdx[2] >= 0) {
+      if (!m_tripwireStagingTex) {
+        D3D11_TEXTURE2D_DESC sd{};
+        sd.Width            = 3;
+        sd.Height           = 1;
+        sd.MipLevels        = 1;
+        sd.ArraySize        = 1;
+        sd.Format           = DXGI_FORMAT_B8G8R8A8_UNORM;
+        sd.SampleDesc.Count = 1;
+        sd.Usage            = D3D11_USAGE_STAGING;
+        sd.CPUAccessFlags   = D3D11_CPU_ACCESS_READ;
+        m_d3dDevice->CreateTexture2D(&sd, nullptr, &m_tripwireStagingTex);
+      }
+      if (m_tripwireStagingTex) {
+        for (int k = 0; k < 3; k++) {
+          int idx = tripwireActiveIdx[k];
+          int gx = idx % 3, gy = idx / 3;
+          int px = (cfg.w * (gx * 2 + 1)) / 6;
+          int py = (cfg.h * (gy * 2 + 1)) / 6;
+          if (px < 0) px = 0; else if (px >= cfg.w) px = cfg.w - 1;
+          if (py < 0) py = 0; else if (py >= cfg.h) py = cfg.h - 1;
+          D3D11_BOX pixBox{ (UINT)(cfg.x + px), (UINT)(cfg.y + py), 0,
+                            (UINT)(cfg.x + px + 1), (UINT)(cfg.y + py + 1), 1 };
+          m_d3dCtx->CopySubresourceRegion(m_tripwireStagingTex, 0,
+                                           k, 0, 0, desktopTex, 0, &pixBox);
+        }
+        D3D11_MAPPED_SUBRESOURCE tmap{};
+        if (SUCCEEDED(m_d3dCtx->Map(m_tripwireStagingTex, 0, D3D11_MAP_READ, 0, &tmap))) {
+          const DWORD *tp = static_cast<const DWORD *>(tmap.pData);
+          int tr2 = (int)GetRValue(cfg.target);
+          int tg2 = (int)GetGValue(cfg.target);
+          int tb2 = (int)GetBValue(cfg.target);
+          int tolSq2 = cfg.tolerance * cfg.tolerance;
+          int matchCount = 0;
+          for (int k = 0; k < 3; k++) {
+            DWORD pix = tp[k] & 0x00FFFFFF;
+            int r = (int)((pix >> 16) & 0xFF);
+            int g = (int)((pix >> 8)  & 0xFF);
+            int b = (int)(pix & 0xFF);
+            int dr = r - tr2, dg = g - tg2, db = b - tb2;
+            if ((dr*dr + dg*dg + db*db) <= tolSq2) matchCount++;
+          }
+          m_d3dCtx->Unmap(m_tripwireStagingTex, 0);
+          if (matchCount >= 2) {
+            desktopTex->Release();
+            m_duplication->ReleaseFrame();
+            return -1000;
+          }
+        }
+      }
     }
 
     // Per-output texture is monitor-sized. cfg.x/y are already monitor-relative

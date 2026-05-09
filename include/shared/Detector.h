@@ -57,6 +57,10 @@ private:
   int  m_stagingW = 0, m_stagingH = 0;
   bool m_dxgiOk   = false;
 
+  // 3×1 staging texture for Phase 1 tripwire check (holds exactly 3 pixels).
+  // Allocated once after DXGI init; released in ReleaseDXGI().
+  ID3D11Texture2D *m_tripwireStagingTex = nullptr;
+
   // BitBlt fallback path
   HDC     m_hdcScreen = NULL;
   HDC     m_hdcMem    = NULL;
