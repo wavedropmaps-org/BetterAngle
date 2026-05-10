@@ -81,19 +81,6 @@ void StartBlockInputWorker() {
   }).detach();
 }
 
-// Helper function to flush pending input messages before blocking
-static void FlushPendingInputMessages() {
-  MSG msg;
-  // Remove all pending keyboard and mouse messages from the queue
-  while (PeekMessageW(&msg, NULL, WM_KEYFIRST, WM_KEYLAST, PM_REMOVE)) {
-  }
-  while (PeekMessageW(&msg, NULL, WM_MOUSEFIRST, WM_MOUSELAST, PM_REMOVE)) {
-  }
-  // Also flush any other input messages
-  while (PeekMessageW(&msg, NULL, 0, 0, PM_REMOVE)) {
-  }
-}
-
 // High-frequency thread to detect Fortnite focus changes instantly (Alt-Tab
 // detection)
 void FocusMonitorThread() {
@@ -451,11 +438,6 @@ void DetectorThread() {
       }
 
       bool nowDiving = (g_matchCount.load() >= g_requiredMatchCount.load());
-
-      // Skip edge detection on first frame after focus return to avoid spurious FOV transition
-      if (g_justRefocused.exchange(false)) {
-        lastDiving = nowDiving;
-      }
 
       // Only trigger input blocking locks if Fortnite is actually focused AND the cursor is hidden.
       // This prevents the mouse from locking up on the desktop if the user tabs out,

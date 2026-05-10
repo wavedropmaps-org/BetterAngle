@@ -104,7 +104,6 @@ bool RefreshHotkeys(HWND hWnd);
 extern std::atomic<bool> g_forceRedraw;
 extern std::atomic<bool> g_keybindAssignmentActive;
 extern std::atomic<bool> g_blockInputActive;
-extern std::atomic<bool> g_justRefocused;
 
 // Pre-spawned BlockInput worker ? eliminates ~5-20ms thread-creation latency
 // on FOV transitions. Detector signals g_lockEvent; worker wakes and locks input.
