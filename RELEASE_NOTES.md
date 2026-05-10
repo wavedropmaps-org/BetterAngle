@@ -1,3 +1,6 @@
+### BetterAngle Pro v5.5.182
+- **perf: Faster tripwire activation + tighter spin-wait (v5.5.182).** Two gap-closing optimizations: (1) Tripwire pre-arm now activates after 3 FOV-change events instead of 5 — the 100% hit-rate and <0.1% noise-rate qualification gates are unchanged, so false-fire rate is unaffected; users get the fast 3-pixel pre-arm path after ~3 skydives instead of ~5. (2) BlockInput worker spin-wait tightened from 1ms (GetTickCount64, ~1ms resolution) to 200µs (QPC-timed, ~1µs resolution) — saves ~0.5–0.8ms of post-BlockInput spinning while still catching back-to-back signals within the same DXGI frame window. QPC frequency cached once at thread start.
+
 ### BetterAngle Pro v5.5.181
 - Automated build release.
 

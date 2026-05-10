@@ -49,13 +49,22 @@ FovDetector g_detector;
 void StartBlockInputWorker() {
   std::thread([]() {
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
+    // Cache QPC frequency once — constant for the lifetime of this thread.
+    LARGE_INTEGER qpcFreq;
+    QueryPerformanceFrequency(&qpcFreq);
     while (g_running) {
-      // Spin-wait for 1ms to catch immediate SetEvent signals (~0.01ms vs ~1ms scheduler latency)
-      ULONGLONG spinStart = GetTickCount64();
+      // Spin-wait for 200µs (QPC-timed) to catch back-to-back SetEvent signals
+      // without scheduler wakeup latency. 200µs covers back-to-back fires within
+      // the same DXGI frame; the 500ms cooldown prevents genuine double-fires.
+      LARGE_INTEGER spinStart;
+      QueryPerformanceCounter(&spinStart);
       DWORD wait = WAIT_TIMEOUT;
-      while (GetTickCount64() - spinStart < 1 && wait == WAIT_TIMEOUT) {
+      while (wait == WAIT_TIMEOUT) {
         wait = WaitForSingleObject(g_lockEvent, 0);
         if (wait == WAIT_OBJECT_0) break;
+        LARGE_INTEGER now;
+        QueryPerformanceCounter(&now);
+        if ((now.QuadPart - spinStart.QuadPart) * 1000000LL / qpcFreq.QuadPart >= 200) break;
         _mm_pause();
       }
       // Fall back to blocking wait if not signaled during spin
@@ -142,10 +151,10 @@ static bool PixelMatchesTarget(DWORD pix, COLORREF target, int tolerance) {
   return dr * dr + dg * dg + db * db <= tolerance * tolerance;
 }
 
-// Promote learning to "ready" once we have >=10 events and >=3 candidates
+// Promote learning to "ready" once we have >=3 events and >=3 candidates
 // with 100% hit rate AND <0.1% noise rate. Returns true on activation.
 static bool TryActivateTripwire(Profile &p) {
-  if (p.tripwireEvents < 5) return false;
+  if (p.tripwireEvents < 3) return false;
   if (p.tripwireCandidates.size() < 3) return false;
 
   int qualifiedIdx[9];
