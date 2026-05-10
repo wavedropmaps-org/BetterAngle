@@ -163,7 +163,7 @@ static bool TryActivateTripwire(Profile &p) {
   for (int i = 0; i < (int)p.tripwireCandidates.size() && qualifiedCount < 9; i++) {
     auto &c = p.tripwireCandidates[i];
     if (c.hits != p.tripwireEvents) continue;        // 100% hit rate gate
-    if (c.idleSamples < 500) continue;               // need enough idle samples
+    if (c.idleSamples < 200) continue;               // need enough idle samples
     if (c.noise * 1000 > c.idleSamples) continue;    // <0.1% noise rate gate
     qualifiedIdx[qualifiedCount] = i;
     qualifiedScore[qualifiedCount] =
@@ -340,29 +340,6 @@ void DetectorThread() {
             g_lastPreArmTime = now;
             SetEvent(g_lockEvent);
             LOG_INFO("Tripwire pre-arm fired (3-pixel coincidence, early)");
-          } else if (scanResult == -1) {
-            // Sub-frame GDI tripwire check between DXGI frames (v5.5.165)
-            if (p.tripwireReady && currentFortniteFocused && !g_isCursorVisible &&
-                !g_blockInputActive.load() && !g_preArmActive.load() &&
-                now >= g_mouseSuspendedUntil &&
-                (now - g_lastLockTime > 500)) {
-              static LARGE_INTEGER lastGdiCheck{};
-              LARGE_INTEGER nowQpc;
-              QueryPerformanceCounter(&nowQpc);
-              // Throttle to 100µs via QPC (using cached frequency, v5.5.173)
-              if ((nowQpc.QuadPart - lastGdiCheck.QuadPart) * 1000000LL / qpcFreqCached.QuadPart >= 100) {
-                lastGdiCheck = nowQpc;
-                if (g_detector.CheckTripwireGDI(cfg, p.tripwireActiveIdx,
-                                                p.target_color, p.tolerance)) {
-                  g_lastLockTime = now;
-                  g_mouseSuspendedUntil = now + 200;
-                  g_lockDurationMs = 200;
-                  g_preArmActive = true;
-                  SetEvent(g_lockEvent);
-                  LOG_INFO("Sub-frame GDI tripwire fired");
-                }
-              }
-            }
           }
           _mm_pause();
           continue;
