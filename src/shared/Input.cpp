@@ -176,22 +176,18 @@ void StartPollingThread() {
 }
 
 void RegisterRawMouse(HWND hwnd) {
-  RAWINPUTDEVICE rid[2];
+  RAWINPUTDEVICE rid[1];
 
-  // Mouse
+  // Mouse only — keyboard RIDEV_INPUTSINK was never processed and
+  // caused Windows to route all keyboard events through this window,
+  // interfering with Fortnite's key delivery (auto-mantle symptom).
   rid[0].usUsagePage = 0x01;
   rid[0].usUsage = 0x02;
   rid[0].dwFlags = RIDEV_INPUTSINK;
   rid[0].hwndTarget = hwnd;
 
-  // Keyboard
-  rid[1].usUsagePage = 0x01;
-  rid[1].usUsage = 0x06;
-  rid[1].dwFlags = RIDEV_INPUTSINK;
-  rid[1].hwndTarget = hwnd;
-
-  if (!RegisterRawInputDevices(rid, 2, sizeof(RAWINPUTDEVICE))) {
-    LOG_ERROR("Failed to register raw input devices (Mouse+Keyboard).");
+  if (!RegisterRawInputDevices(rid, 1, sizeof(RAWINPUTDEVICE))) {
+    LOG_ERROR("Failed to register raw input devices (Mouse).");
   }
 }
 

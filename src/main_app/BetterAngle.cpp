@@ -594,7 +594,7 @@ LRESULT CALLBACK MsgWndProc(HWND hWnd, UINT message, WPARAM wParam,
     if (allowAngleUpdate) {
       g_logic.Update(dx);
     }
-    return 0;
+    // Fall through to DefWindowProc — required to free the raw input buffer.
   }
   return DefWindowProc(hWnd, message, wParam, lParam);
 }
