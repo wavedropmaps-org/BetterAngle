@@ -100,7 +100,7 @@ void DrawOverlay(HWND hwnd, double angle, bool showCrosshair) {
   if (!s_ff) {
     s_ff = new FontFamily(L"Segoe UI");
     s_labelFont = new Font(s_ff, 9, FontStyleBold, UnitPixel);
-    s_angleFont = new Font(s_ff, 68, FontStyleBold, UnitPixel);
+    s_angleFont = new Font(s_ff, 54, FontStyleBold, UnitPixel);
     s_subFont = new Font(s_ff, 12, FontStyleBold, UnitPixel);
     s_tinyFont = new Font(s_ff, 9, FontStyleRegular, UnitPixel);
     s_roiFont = new Font(s_ff, 10, FontStyleBold, UnitPixel);
@@ -459,12 +459,12 @@ void DrawOverlay(HWND hwnd, double angle, bool showCrosshair) {
         graphics.MeasureString(p.text.c_str(), -1, s_angleFont, PointF(0, 0), &bounds);
         p.width = bounds.Width;
         // Tighten the spacing for the dot and decimals
-        if (p.text == L".") p.width -= 15.0f; 
+        if (p.text == L".") p.width -= 12.0f; 
         totalWidth += p.width;
     }
 
     float currentX = rx + (rw - totalWidth) / 2.0f;
-    float yPos = ry + 26.0f;
+    float yPos = ry + 32.0f;
 
     for (auto &p : parts) {
         if (p.text.empty()) continue;
