@@ -433,13 +433,14 @@ void DrawOverlay(HWND hwnd, double angle, bool showCrosshair) {
     double roundedAngle = std::round(dispAngle * 100.0) / 100.0;
     if (roundedAngle >= 360.0) roundedAngle -= 360.0;
 
-    std::wstring fullStr = FmtFloat(roundedAngle, 2);
+    int decimals = g_allProfiles.empty() ? 2 : g_allProfiles[g_selectedProfileIdx].hudDecimals;
+    std::wstring fullStr = FmtFloat(roundedAngle, decimals);
     size_t dotPos = fullStr.find(L'.');
     
     std::wstring partWhole = (dotPos != std::string::npos) ? fullStr.substr(0, dotPos) : fullStr;
-    std::wstring partDot = L".";
-    std::wstring partD1 = (dotPos != std::string::npos && dotPos + 1 < fullStr.size()) ? fullStr.substr(dotPos + 1, 1) : L"0";
-    std::wstring partD2 = (dotPos != std::string::npos && dotPos + 2 < fullStr.size()) ? fullStr.substr(dotPos + 2, 1) : L"0";
+    std::wstring partDot = (decimals > 0 && dotPos != std::string::npos) ? L"." : L"";
+    std::wstring partD1 = (decimals > 0 && dotPos != std::string::npos && dotPos + 1 < fullStr.size()) ? fullStr.substr(dotPos + 1, 1) : L"";
+    std::wstring partD2 = (decimals > 1 && dotPos != std::string::npos && dotPos + 2 < fullStr.size()) ? fullStr.substr(dotPos + 2, 1) : L"";
     std::wstring partDeg = L"\xB0";
 
     struct AnglePart { std::wstring text; Color color; float width; };
@@ -453,6 +454,7 @@ void DrawOverlay(HWND hwnd, double angle, bool showCrosshair) {
 
     float totalWidth = 0;
     for (auto &p : parts) {
+        if (p.text.empty()) continue;
         RectF bounds;
         graphics.MeasureString(p.text.c_str(), -1, s_angleFont, PointF(0, 0), &bounds);
         p.width = bounds.Width;
@@ -465,6 +467,7 @@ void DrawOverlay(HWND hwnd, double angle, bool showCrosshair) {
     float yPos = ry + 26.0f;
 
     for (auto &p : parts) {
+        if (p.text.empty()) continue;
         SolidBrush partBrush(p.color);
         graphics.DrawString(p.text.c_str(), -1, s_angleFont, PointF(currentX, yPos), &partBrush);
         currentX += p.width;

@@ -57,6 +57,7 @@ struct Profile {
 
   // Crosshair Settings
   bool showCrosshair = false;
+  int hudDecimals = 2;
   float crossThickness = 2.0f;
   COLORREF crossColor = RGB(255, 0, 0);
   float crossOffsetX = 0.0f;

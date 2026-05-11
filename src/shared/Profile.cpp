@@ -131,6 +131,12 @@ bool Profile::Load(const std::wstring &path) {
   showCrosshair = extractDouble("showCrosshair") > 0.5;
   if (content.find("\"showCrosshair\"") == std::string::npos)
     showCrosshair = true;
+    
+  if (content.find("\"hudDecimals\"") != std::string::npos) {
+    hudDecimals = (int)extractDouble("hudDecimals");
+  } else {
+    hudDecimals = 2; // Default
+  }
 
   // Load Presets Array (Manual Parser)
   crosshairPresets.clear();
@@ -282,6 +288,7 @@ bool Profile::Save(const std::wstring &path) {
 
   ss << "  \"crossThickness\": " << std::fixed << std::setprecision(6) << crossThickness << ",\n";
   ss << "  \"showCrosshair\": " << (showCrosshair ? 1 : 0) << ",\n";
+  ss << "  \"hudDecimals\": " << hudDecimals << ",\n";
   ss << "  \"crossColor\": " << (unsigned long)crossColor << ",\n";
   ss << "  \"crossOffsetX\": " << crossOffsetX << ",\n";
   ss << "  \"crossOffsetY\": " << crossOffsetY << ",\n";
