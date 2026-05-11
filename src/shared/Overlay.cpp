@@ -430,10 +430,10 @@ void DrawOverlay(HWND hwnd, double angle, bool showCrosshair) {
 
     // Angle text — L"\xB0" is the degree symbol (safe ASCII escape)
     double dispAngle = std::abs(angle);
-    double roundedAngle = std::round(dispAngle * 10.0) / 10.0;
+    double roundedAngle = std::round(dispAngle * 100.0) / 100.0;
     if (roundedAngle >= 360.0)
       roundedAngle -= 360.0;
-    std::wstring angleStr = FmtFloat(roundedAngle, 1) + L"\xB0";
+    std::wstring angleStr = FmtFloat(roundedAngle, 2) + L"\xB0";
     Color angleCol =
         g_isDiving ? Color(255, 0, 220, 255) : Color(255, 0, 210, 140);
     SolidBrush angleBrush(angleCol);
