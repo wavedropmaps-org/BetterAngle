@@ -428,19 +428,47 @@ void DrawOverlay(HWND hwnd, double angle, bool showCrosshair) {
                         RectF(float(rx), float(ry + 8), float(rw), 18.0f),
                         s_fmtCenter, s_labelBrush);
 
-    // Angle text — L"\xB0" is the degree symbol (safe ASCII escape)
+    // Split angle into color-coded parts: Whole . D1 D2 Degree
     double dispAngle = std::abs(angle);
     double roundedAngle = std::round(dispAngle * 100.0) / 100.0;
-    if (roundedAngle >= 360.0)
-      roundedAngle -= 360.0;
-    std::wstring angleStr = FmtFloat(roundedAngle, 2) + L"\xB0";
-    Color angleCol =
-        g_isDiving ? Color(255, 0, 220, 255) : Color(255, 0, 210, 140);
-    SolidBrush angleBrush(angleCol);
+    if (roundedAngle >= 360.0) roundedAngle -= 360.0;
 
-    graphics.DrawString(angleStr.c_str(), -1, s_angleFont,
-                        RectF(float(rx), float(ry + 26), float(rw), 80.0f),
-                        s_fmtAngle, &angleBrush);
+    std::wstring fullStr = FmtFloat(roundedAngle, 2);
+    size_t dotPos = fullStr.find(L'.');
+    
+    std::wstring partWhole = (dotPos != std::string::npos) ? fullStr.substr(0, dotPos) : fullStr;
+    std::wstring partDot = L".";
+    std::wstring partD1 = (dotPos != std::string::npos && dotPos + 1 < fullStr.size()) ? fullStr.substr(dotPos + 1, 1) : L"0";
+    std::wstring partD2 = (dotPos != std::string::npos && dotPos + 2 < fullStr.size()) ? fullStr.substr(dotPos + 2, 1) : L"0";
+    std::wstring partDeg = L"\xB0";
+
+    struct AnglePart { std::wstring text; Color color; float width; };
+    AnglePart parts[] = {
+        { partWhole, Color(255, 46, 204, 113), 0 }, // Green
+        { partDot,   Color(255, 200, 200, 200), 0 }, // Gray
+        { partD1,    Color(255, 52, 152, 219), 0 }, // Cyan
+        { partD2,    Color(255, 241, 196, 15), 0 },  // Yellow
+        { partDeg,   Color(255, 46, 204, 113), 0 }  // Green
+    };
+
+    float totalWidth = 0;
+    for (auto &p : parts) {
+        RectF bounds;
+        graphics.MeasureString(p.text.c_str(), -1, s_angleFont, PointF(0, 0), &bounds);
+        p.width = bounds.Width;
+        // Tighten the spacing for the dot and decimals
+        if (p.text == L".") p.width -= 15.0f; 
+        totalWidth += p.width;
+    }
+
+    float currentX = rx + (rw - totalWidth) / 2.0f;
+    float yPos = ry + 26.0f;
+
+    for (auto &p : parts) {
+        SolidBrush partBrush(p.color);
+        graphics.DrawString(p.text.c_str(), -1, s_angleFont, PointF(currentX, yPos), &partBrush);
+        currentX += p.width;
+    }
 
     // Match % label
     int matchCount = g_matchCount.load();
