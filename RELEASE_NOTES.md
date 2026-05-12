@@ -1,5 +1,8 @@
+### BetterAngle Pro v5.5.199
+- Automated build release.
+
 ### BetterAngle Pro v5.5.198
-- fix: Overlay window now excluded from DXGI Desktop Duplication via SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE). DXGI color picker restored as primary — scanner and picker now read the exact same raw game bytes with zero byte drift. BitBlt snapshot retained as fallback for device-lost scenarios.
+- fix: Overlay window now excluded from DXGI Desktop Duplication via SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE). DXGI color picker restored as primary ? scanner and picker now read the exact same raw game bytes with zero byte drift. BitBlt snapshot retained as fallback for device-lost scenarios.
 
 ### BetterAngle Pro v5.5.197
 - Automated build release.
