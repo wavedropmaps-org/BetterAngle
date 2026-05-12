@@ -1,6 +1,9 @@
+### BetterAngle Pro v5.5.193
+- Automated build release.
+
 ### BetterAngle Pro v5.5.192
 - fix: Stage 2 color pick now always samples from the frozen BitBlt snapshot instead of the live DXGI frame. DXGI was capturing the screen with the dim overlay on top, producing a darkened color that caused 0% match in-game.
-- fix: Stage 2 magnifier now zooms from the same frozen snapshot so the user sees the exact undimmed pixel they are picking — no more mismatch between what you see and what gets saved.
+- fix: Stage 2 magnifier now zooms from the same frozen snapshot so the user sees the exact undimmed pixel they are picking ? no more mismatch between what you see and what gets saved.
 
 ### BetterAngle Pro v5.5.191
 - **fix: AVX2 Per-Pixel Match Precision.** Rewrote the AVX2 fast-path scanner to calculate the L1 distance pixel-by-pixel instead of pairing them. This restores 100% detection accuracy for 1px-thin targets (like text and crosshairs) without sacrificing scan speed.
