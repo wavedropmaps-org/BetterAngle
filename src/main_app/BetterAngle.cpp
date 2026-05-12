@@ -147,7 +147,8 @@ static bool PixelMatchesTarget(DWORD pix, COLORREF target, int tolerance) {
   int tr = (int)GetRValue(target);
   int tg = (int)GetGValue(target);
   int tb = (int)GetBValue(target);
-  return std::abs(r - tr) <= tolerance && std::abs(g - tg) <= tolerance && std::abs(b - tb) <= tolerance;
+  int dr = r - tr, dg = g - tg, db = b - tb;
+  return dr * dr + dg * dg + db * db <= tolerance * tolerance;
 }
 
 // Promote learning to "ready" once we have >=3 events and >=3 candidates
