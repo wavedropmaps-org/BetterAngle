@@ -1,5 +1,5 @@
 ### BetterAngle Pro v5.5.225
-- Automated build release.
+- **tweak: FOV transition BlockInput duration increased from 350ms to 500ms** for both glide→dive and dive→glide.
 
 ### BetterAngle Pro v5.5.224
 - **fix: 1-2 degree angle error immediately after FOV transition lock.** `SetDivingState` was being called unconditionally every DetectorThread iteration during the 350ms BlockInput window. While the lock was active the scanner was still running and `nowDiving` fluctuated, causing repeated scale flips (1.0x ? 1.0916x) that corrupted the angle reference mid-lock. Fix: call `SetDivingState` exactly once when the transition lock fires, then gate the unconditional bottom call with `!g_blockInputActive`. Same behaviour as the alt-tab lock, which has always been correct.
