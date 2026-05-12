@@ -7,6 +7,11 @@
 ### BetterAngle Pro v5.5.196
 - Automated build release.
 
+### BetterAngle Pro v5.5.199
+- **fix: Input ghosting / Auto-mantle fixed.** Removed unused keyboard raw input registration that caused Windows to delay key delivery (especially Space).
+- **fix: Alt-tab cooldown guard.** Added a timing guard to prevent firing a 400ms lock immediately after an FOV-edge lock if focus shifted.
+- **fix: Proper Raw Input cleanup.** MsgWndProc now falls through to DefWindowProc for WM_INPUT to correctly free internal buffers.
+
 ### BetterAngle Pro v5.5.195
 - **feat: Colour-Coded Angle Display.** Whole number renders in Green, 1st decimal in Cyan, 2nd decimal in Yellow for instant visual parsing.
 - **feat: HUD Decimal Precision Toggle.** New "Decimal Places" dropdown in the General tab lets you switch between 1 or 2 decimal places. Font auto-scales to fit.
