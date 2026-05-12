@@ -829,18 +829,23 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
           InvalidateRect(hWnd, NULL, FALSE);
         }
 
-        // Adjust click-through and Z-order based on Fortnite focus
+        // Adjust click-through and Z-order based on Fortnite focus.
+        // NOTOPMOST is delayed 300ms after focus loss so the switch doesn't
+        // fire mid-animation and cause a visible stutter during alt-tab out.
+        static ULONGLONG s_focusLostAt = 0;
         long ex = GetWindowLong(hWnd, GWL_EXSTYLE);
         if (fnFocused) {
-          // When Fortnite is focused, make HUD transparent to clicks and Topmost
+          s_focusLostAt = 0;
           if (!(ex & WS_EX_TRANSPARENT)) {
             SetWindowLong(hWnd, GWL_EXSTYLE, ex | WS_EX_TRANSPARENT);
             SetWindowPos(hWnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
           }
         } else {
-          // When not focused, ensure HUD receives mouse events for dragging and drop Topmost
-          // Dropping Topmost prevents Windows from hiding the taskbar ("bottom of screen disappearing")
-          if (ex & WS_EX_TRANSPARENT) {
+          if (s_focusLostAt == 0) s_focusLostAt = GetTickCount64();
+          // Wait 300ms before dropping TOPMOST so the DWM alt-tab animation
+          // finishes before we change z-order.
+          bool animDone = (GetTickCount64() - s_focusLostAt) >= 300;
+          if (animDone && (ex & WS_EX_TRANSPARENT)) {
             SetWindowLong(hWnd, GWL_EXSTYLE, ex & ~WS_EX_TRANSPARENT);
             SetWindowPos(hWnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
           }
@@ -850,12 +855,18 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
       g_isCursorVisible = IsCursorCurrentlyVisible();
       float ang = g_logic.GetAngle();
 
-      // Clear the forced redraw flag occasionally set elsewhere
       g_forceRedraw.store(false);
 
-      // Unconditionally draw overlay at 60FPS to keep Debug stats (FPS/Delay)
-      // synced live
-      DrawOverlay(hWnd, ang, g_showCrosshair);
+      // When Fortnite is focused render at full 60fps. When not focused throttle
+      // to ~5fps so background painting doesn't compete with the alt-tab
+      // animation or the app the user switched to.
+      static ULONGLONG s_lastUnfocusedPaint = 0;
+      bool fnFocusedNow = g_fortniteFocusedCache.load();
+      ULONGLONG nowMs = GetTickCount64();
+      if (fnFocusedNow || (nowMs - s_lastUnfocusedPaint) >= 200) {
+        if (!fnFocusedNow) s_lastUnfocusedPaint = nowMs;
+        DrawOverlay(hWnd, ang, g_showCrosshair);
+      }
     } else if (wParam == 2) { // 30s Auto-Save Periodic Timer
       SaveSettings();
       if (!g_allProfiles.empty() &&

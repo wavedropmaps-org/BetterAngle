@@ -1,3 +1,6 @@
+### BetterAngle Pro v5.5.196
+- fix: Alt-tab out is now smooth. Delayed the HWND_NOTOPMOST z-order switch by 300ms after focus loss so it no longer fires mid-DWM-animation and causes a visible stutter. Also throttled overlay painting to ~5fps when Fortnite is not focused so background rendering stops competing with the alt-tab transition.
+
 ### BetterAngle Pro v5.5.195
 - Automated build release.
 
