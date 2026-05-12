@@ -34,44 +34,57 @@ static int CountMatchesScalar(const DWORD *p, int total,
   return match;
 }
 
-// AVX2 fast path: L1 distance via _mm256_sad_epu8.
+// AVX2 fast path: L1 distance per-pixel via saturated subtract and horizontal add.
 //
-// SAD groups 8 bytes per sum, and each BGRA pixel is 4 bytes — so each SAD
-// lane covers 2 pixels' combined channel-diff sum (alpha masked to 0 in both
-// operands). We compare each 2-pixel sum against 2*L1tol and count 2 matches
-// per matching lane. This is per-PAIR granularity, slightly more permissive
-// than per-pixel L2 — for a solid-coloured FOV indicator this matches the
-// scalar version's behaviour to within ~5% on edge pixels (well inside the
-// user's diveGlideMatch percentage threshold's slack).
+// Processes 8 pixels simultaneously. For each pixel, computes |R-tr| + |G-tg| + |B-tb|.
+// Uses saturated subtract to get absolute difference: |a-b| = max(a-b, b-a) = (a-b) | (b-a).
+// Then uses _mm256_maddubs_epi16 to sum the adjacent byte pairs (B+G and R+A) without overflow.
+// Finally adds the pairs to get the total RGB L1 error per pixel and compares against L1tol.
 //
 // L1tol = tolerance * sqrt(3) keeps the L1 ball comparable in size to the
 // scalar L2 ball (containment) so calibrated colours don't need re-pick.
 static int CountMatchesAvx2(const DWORD *p, int total,
                             int tr, int tg, int tb, int tolerance) {
   const int L1tol  = (int)((float)tolerance * 1.7320508f); // sqrt(3)
-  const int L1tol2 = L1tol * 2;                            // pair threshold
 
-  // Target with alpha=0; pixels will be masked to alpha=0 too so SAD's alpha
-  // contribution is |0-0|=0.
+  // Target with alpha=0; pixels will be masked to alpha=0 too.
   const DWORD targetDword = ((DWORD)tr << 16) | ((DWORD)tg << 8) | (DWORD)tb;
   const __m256i target_v   = _mm256_set1_epi32((int)targetDword);
   const __m256i alpha_mask = _mm256_set1_epi32(0x00FFFFFF);
-  const __m256i tol2_v     = _mm256_set1_epi64x((long long)L1tol2);
+  const __m256i ones       = _mm256_set1_epi8(1);
+  const __m256i mask16     = _mm256_set1_epi32(0x0000FFFF);
+  const __m256i tol_v      = _mm256_set1_epi32(L1tol);
 
   int match = 0, i = 0;
   for (; i <= total - 8; i += 8, p += 8) {
     __m256i pixels     = _mm256_loadu_si256((const __m256i *)p);
     __m256i pix_masked = _mm256_and_si256(pixels, alpha_mask);
-    // 4 lanes of u16 sums; each lane = sum of |dB|+|dG|+|dR| for 2 pixels.
-    __m256i sad        = _mm256_sad_epu8(pix_masked, target_v);
-    // gt[lane] = -1 if sad > L1tol2 (no match), 0 otherwise (match).
-    __m256i gt         = _mm256_cmpgt_epi64(sad, tol2_v);
-    // Each 64-bit lane is all-1s or all-0s; movemask gives 8 mask bits per lane.
-    int mask32 = _mm256_movemask_epi8(gt);
-    int noMatchLanes = (int)__popcnt((unsigned int)mask32) / 8;
-    int matchLanes   = 4 - noMatchLanes;
-    match += matchLanes * 2; // 2 pixels per lane
+    
+    // Absolute difference per byte: |pix - target|
+    __m256i diff1 = _mm256_subs_epu8(pix_masked, target_v);
+    __m256i diff2 = _mm256_subs_epu8(target_v, pix_masked);
+    __m256i abs_diff = _mm256_or_si256(diff1, diff2);
+    
+    // Sum adjacent byte pairs: word0 = |B-tb| + |G-tg|, word1 = |R-tr| + 0
+    __m256i sum_pairs = _mm256_maddubs_epi16(abs_diff, ones);
+    
+    // Add word1 to word0 for each 32-bit element
+    __m256i shifted = _mm256_srli_epi32(sum_pairs, 16);
+    __m256i sum32 = _mm256_add_epi32(sum_pairs, shifted);
+    
+    // Clear upper 16 bits of the 32-bit sum to prevent garbage from messing up the comparison
+    __m256i clean_sum32 = _mm256_and_si256(sum32, mask16);
+    
+    // Compare against tolerance: gt mask is all-1s if error > tolerance
+    __m256i gt = _mm256_cmpgt_epi32(clean_sum32, tol_v);
+    
+    // Extract sign bit of each 32-bit element (1 if no match, 0 if match)
+    int mask32 = _mm256_movemask_ps(_mm256_castsi256_ps(gt));
+    
+    int noMatchLanes = (int)__popcnt((unsigned int)mask32);
+    match += 8 - noMatchLanes;
   }
+  
   // Remainder: scalar with single-pixel L1 threshold for consistency.
   for (; i < total; i++, p++) {
     DWORD pix = *p;
