@@ -34,7 +34,7 @@ extern std::string g_lastVersionRun;
 #ifndef V_MAJ
 #define V_MAJ 5
 #define V_MIN 5
-#define V_PAT 222
+#define V_PAT 223
 #endif
 
 #define VERSION_STR APP_STR_Y(V_MAJ) "." APP_STR_Y(V_MIN) "." APP_STR_Y(V_PAT)
