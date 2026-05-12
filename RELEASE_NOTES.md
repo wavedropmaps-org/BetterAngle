@@ -1,3 +1,6 @@
+### BetterAngle Pro v5.5.229
+- Automated build release.
+
 ### BetterAngle Pro v5.5.228
 - **tweak: Alt-tab BlockInput lock duration reduced from 300ms to 150ms.**
 
