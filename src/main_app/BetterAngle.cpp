@@ -264,9 +264,6 @@ void DetectorThread() {
 
       lastDiving = nowDiving;
       g_isDiving = nowDiving;
-      if (!g_blockInputActive.load()) {
-        g_logic.SetDivingState(nowDiving);
-      }
     }
     // Spin (peg one core) only while actively scanning; otherwise idle politely.
     // _mm_pause is a CPU hint that yields hyperthread cycles during a spin loop.
