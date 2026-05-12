@@ -1,5 +1,5 @@
 ### BetterAngle Pro v5.5.227
-- Automated build release.
+- **tweak: FOV transition BlockInput duration reduced from 500ms to 200ms** for both glide→dive and dive→glide.
 
 ### BetterAngle Pro v5.5.226
 - **fix: 1-2 degree angle error when moving immediately after FOV transition lock.** Root cause: after the BlockInput window ended, the scanner took ~1 second to settle. During that settling window, `SetDivingState` was being called on every DetectorThread iteration with fluctuating scanner values, re-baking `m_baseAngle` each time the scale flipped. Any mouse movement between flips was accumulated at the wrong scale and baked into the base angle. Standing still during the settling window avoided the error because GetAngle() returns the same value with no movement, making all the bakes no-ops. Fix: removed the unconditional `SetDivingState(nowDiving)` call from the bottom of the DetectorThread loop entirely. `SetDivingState` is now ONLY called when a transition lock actually fires ? never speculatively from the scanner output. Post-lock scanner fluctuations can no longer corrupt the angle.
