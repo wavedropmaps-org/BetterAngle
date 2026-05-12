@@ -102,8 +102,8 @@ void FocusMonitorThread() {
     if (!lastFortniteFocused && currentFortniteFocused) {
       ULONGLONG unfocusedMs = GetTickCount64() - focusLostTime;
       if (unfocusedMs >= 500 && !g_blockInputActive.load()) {
-        g_mouseSuspendedUntil = GetTickCount64() + 300;
-        g_lockDurationMs = 300;
+        g_mouseSuspendedUntil = GetTickCount64() + 150;
+        g_lockDurationMs = 150;
         SetEvent(g_lockEvent);
         LOG_INFO("Alt-tab focus detected (400ms BlockInput for FOV stabilization)");
       }
