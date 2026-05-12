@@ -1,5 +1,8 @@
+### BetterAngle Pro v5.5.190
+- Automated build release.
+
 ### BetterAngle Pro v5.5.189
-- **fix: Chebyshev Distance Migration.** Replaced the punishing Euclidean and L1 distance algorithms in the pixel scanning engine with a proper Chebyshev (Box) distance metric. This makes the scanning robust against natural in-game lighting and shadow shifts, and fixes a major spatial-bleeding bug in the AVX2 fast path. The "Tolerance (color match ±)" slider now accurately reflects independent ± tolerance for each color channel.
+- **fix: Chebyshev Distance Migration.** Replaced the punishing Euclidean and L1 distance algorithms in the pixel scanning engine with a proper Chebyshev (Box) distance metric. This makes the scanning robust against natural in-game lighting and shadow shifts, and fixes a major spatial-bleeding bug in the AVX2 fast path. The "Tolerance (color match ?)" slider now accurately reflects independent ? tolerance for each color channel.
 
 ### BetterAngle Pro v5.5.188
 - **fix: HUD UI Scaling.** Reduced the HUD decimal font size to perfectly fit 2 decimal places within the bounding box and re-aligned the vertical center.
