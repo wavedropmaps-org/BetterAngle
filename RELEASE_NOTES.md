@@ -1,8 +1,11 @@
+### BetterAngle Pro v5.5.217
+- Automated build release.
+
 ### BetterAngle Pro v5.5.216
 - **fix: Alt-tab lock ROI box never showed LOCKING state.** The alt-tab lock in `FocusMonitorThread` was signaling `BlockInput` but not setting `g_mouseSuspendedUntil`, so the ROI visualizer (which shows purple LOCKING when that timer is active) always showed GLIDING/DIVING during the alt-tab lock. Now sets `g_mouseSuspendedUntil = GetTickCount64() + 400` before signaling the worker, matching what the FOV transition locks do.
 
 ### BetterAngle Pro v5.5.215
-- **fix: Alt-tab BlockInput lock silently suppressed during gameplay.** `FocusMonitorThread` had a third guard `(GetTickCount64() - g_lastLockTime > 500)` on the alt-tab lock. `g_lastLockTime` is updated by every FOV transition lock (glide↔dive), which happen continuously during a skydive — keeping `g_lastLockTime` always within the last 500ms and permanently blocking the alt-tab lock. Removed this guard from the alt-tab path; the existing `unfocusedMs >= 500` check is sufficient to distinguish real alt-tabs from overlay/notification blips.
+- **fix: Alt-tab BlockInput lock silently suppressed during gameplay.** `FocusMonitorThread` had a third guard `(GetTickCount64() - g_lastLockTime > 500)` on the alt-tab lock. `g_lastLockTime` is updated by every FOV transition lock (glide?dive), which happen continuously during a skydive ? keeping `g_lastLockTime` always within the last 500ms and permanently blocking the alt-tab lock. Removed this guard from the alt-tab path; the existing `unfocusedMs >= 500` check is sufficient to distinguish real alt-tabs from overlay/notification blips.
 
 ### BetterAngle Pro v5.5.214
 - **fix: BlockInput lock breaking after 10ms.** `g_lockDurationMs.exchange(0)` zeroes the value the instant the worker reads it, so the `g_lockDurationMs.load() == 0` check inside the loop was always true and broke the lock after a single tick. Removed that check entirely ? the loop now runs for the full requested duration and only exits early if Fortnite loses focus (via `g_fortniteFocusedCache`), which is the same abort mechanism used by the FOV transition locks.
