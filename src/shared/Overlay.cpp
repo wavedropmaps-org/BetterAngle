@@ -3,6 +3,7 @@
 #include "shared/Input.h"
 #include "shared/Logic.h"
 #include "shared/State.h"
+#include <cmath>
 #include <gdiplus.h>
 #include <iomanip>
 #include <iostream>
@@ -432,15 +433,17 @@ void DrawOverlay(HWND hwnd, double angle, bool showCrosshair) {
     // Whole number = Green, 1st decimal = Cyan, 2nd decimal = Yellow.
     double dispAngle = std::abs(angle);
     int decimals = g_hudDecimalPlaces.load();
-    double factor = (decimals == 2) ? 100.0 : 10.0;
-    double roundedAngle = std::round(dispAngle * factor) / factor;
-    if (roundedAngle >= 360.0)
-      roundedAngle -= 360.0;
+    long long factor = (decimals == 2) ? 100LL : 10LL;
 
-    // Split into segments
-    int wholePart = (int)roundedAngle;
-    int dec1 = (int)(roundedAngle * 10.0) % 10;
-    int dec2 = (int)(roundedAngle * 100.0) % 10;
+    // Convert to a scaled integer once to avoid floating-point truncation
+    // errors when extracting individual decimal digits via % and /.
+    long long ival = llround(dispAngle * (double)factor);
+    if (ival >= 360LL * factor) ival -= 360LL * factor;
+
+    int wholePart = (int)(ival / factor);
+    int dec1 = (decimals == 2) ? (int)((ival / 10LL) % 10LL)
+                                : (int)(ival % 10LL);
+    int dec2 = (int)(ival % 10LL);
 
     // Build segment strings
     std::wstring wholeStr = std::to_wstring(wholePart) + L".";
