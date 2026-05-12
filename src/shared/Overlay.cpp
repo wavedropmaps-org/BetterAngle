@@ -243,19 +243,27 @@ void DrawOverlay(HWND hwnd, double angle, bool showCrosshair) {
             (int)(g_selectionRect.bottom - g_selectionRect.top));
       }
 
-      // Live magnifier
+      // Frozen-snapshot magnifier — zooms into g_screenSnapshot so the user
+      // sees the exact undimmed game pixels they are sampling from, not the
+      // live screen (which has the dim overlay on top and would show darker
+      // colors than the real game frame stored in the snapshot).
       POINT curScr;
       GetCursorPos(&curScr);
       POINT cur = curScr;
       ScreenToClient(hwnd, &cur);
 
       int mx = curScr.x - 40, my = curScr.y - 40, mw = 80, mh = 80;
-      HDC hdcScr = GetDC(NULL);
+      int vsx = GetSystemMetrics(SM_XVIRTUALSCREEN);
+      int vsy = GetSystemMetrics(SM_YVIRTUALSCREEN);
+      HDC hdcSnap = CreateCompatibleDC(hdcMem);
+      HGDIOBJ hOldSnap = SelectObject(hdcSnap, g_screenSnapshot);
       HDC hdcZoom = CreateCompatibleDC(hdcMem);
       HBITMAP hbmZoom = CreateCompatibleBitmap(hdcMem, mw * 3, mh * 3);
       SelectObject(hdcZoom, hbmZoom);
-      StretchBlt(hdcZoom, 0, 0, mw * 3, mh * 3, hdcScr, mx, my, mw, mh,
-                 SRCCOPY);
+      StretchBlt(hdcZoom, 0, 0, mw * 3, mh * 3, hdcSnap,
+                 mx - vsx, my - vsy, mw, mh, SRCCOPY);
+      SelectObject(hdcSnap, hOldSnap);
+      DeleteDC(hdcSnap);
 
       // Position magnifier relative to client cursor
       int zx =
@@ -279,7 +287,6 @@ void DrawOverlay(HWND hwnd, double angle, bool showCrosshair) {
 
       DeleteObject(hbmZoom);
       DeleteDC(hdcZoom);
-      ReleaseDC(NULL, hdcScr);
     }
 
     goto render_done;

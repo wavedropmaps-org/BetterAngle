@@ -619,7 +619,12 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
       g_selectionRect = {cur.x, cur.y, cur.x, cur.y};
     } else if (g_currentSelection == SELECTING_COLOR) {
       LOG_INFO("Stage 2 LBUTTONDOWN executed");
-      // STAGE 2: PRECISION COLOR PICK (Snap-Shot Bypass)
+      // STAGE 2: Sample color from the frozen snapshot taken at Stage 1.
+      // We deliberately do NOT use DXGI here — DXGI captures the live screen
+      // which at this point has the dim overlay drawn on top, producing a
+      // darkened color that won't match the real game pixel the scanner sees.
+      // The BitBlt snapshot is the exact frame the user is viewing and clicking
+      // on, so it is the correct source of truth for the match threshold.
       LOG_INFO("Stage 2 LBUTTONDOWN: Starting to finalize selection");
       if (g_screenSnapshot) {
         LOG_TRACE("Sampling color from g_screenSnapshot...");
@@ -632,28 +637,16 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
 
         POINT cur;
         GetCursorPos(&cur);
-        COLORREF bitBltPixel = GetPixel(hdcMem, cur.x - sx, cur.y - sy);
+        COLORREF chosen = GetPixel(hdcMem, cur.x - sx, cur.y - sy);
 
         SelectObject(hdcMem, hOld);
         DeleteDC(hdcMem);
         ReleaseDC(NULL, hdcScreen);
 
-        // Try a one-shot DXGI sample at the same screen-space pixel. The
-        // scanner reads DXGI bytes — saving the DXGI-sampled value as
-        // target_color avoids the GDI/DXGI byte drift that otherwise
-        // prevents matches. Falls back to the BitBlt sample on failure.
-        RECT mRect = GetMonitorRectByIndex(g_screenIndex);
-        int monX = cur.x - mRect.left;
-        int monY = cur.y - mRect.top;
-        COLORREF dxgiPixel = 0;
-        bool gotDxgi = g_detector.SamplePixelDXGI(monX, monY, dxgiPixel);
-
-        COLORREF chosen = gotDxgi ? dxgiPixel : bitBltPixel;
         g_pickedColor = chosen;
         g_targetColor = chosen;
-        g_lastPickSource = gotDxgi ? 1 : 2;
-        LOG_INFO("Color picked: source=%s rgb=(%d,%d,%d)",
-                 gotDxgi ? "DXGI" : "BitBlt-fallback",
+        g_lastPickSource = 2;
+        LOG_INFO("Color picked: source=snapshot rgb=(%d,%d,%d)",
                  GetRValue(chosen), GetGValue(chosen), GetBValue(chosen));
       }
 
