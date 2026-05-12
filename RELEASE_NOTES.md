@@ -1,3 +1,6 @@
+### BetterAngle Pro v5.5.201
+- **fix: 2dp angle font size.** Removed the smaller 48px fallback font for 2-decimal mode — both 1dp and 2dp now use the same 54px bold font.
+
 ### BetterAngle Pro v5.5.200
 - Automated build release.
 

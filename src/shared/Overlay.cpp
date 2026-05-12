@@ -454,11 +454,7 @@ void DrawOverlay(HWND hwnd, double angle, bool showCrosshair) {
     SolidBrush yellowBrush(Color(255, 255, 220, 50));   // 2nd decimal
     SolidBrush degBrush(Color(180, 200, 200, 200));     // Degree symbol
 
-    // Use a slightly smaller font so 2-decimal numbers fit the box
-    static Font *s_angleFontSmall = nullptr;
-    if (!s_angleFontSmall)
-      s_angleFontSmall = new Font(s_ff, 48, FontStyleBold, UnitPixel);
-    Font *useFont = (decimals == 2) ? s_angleFontSmall : s_angleFont;
+    Font *useFont = s_angleFont;
 
     // GenericTypographic eliminates GDI+ internal per-segment padding so
     // back-to-back DrawString calls don't accumulate gaps between segments.
