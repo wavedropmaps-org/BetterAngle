@@ -1,3 +1,2 @@
-### BetterAngle Pro v5.5.204
-- **perf: Early-Exit Scan logic.** The scanner now stops immediately once your required match percentage is reached. This reduces CPU usage during active locks.
-- **chore: Removed ineffective GDI sub-frame check.** Eliminates micro-stuttering caused by context-switching to the message queue during high-speed scans.
+### BetterAngle Pro v5.5.205
+- **perf: Throttled Cursor Visibility Check.** Instead of calling `GetCursorInfo` 1000+ times per second, the check now runs every 16ms. This significantly reduces User32 call overhead and jitter on lower-end CPUs.

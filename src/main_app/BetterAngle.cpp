@@ -134,7 +134,15 @@ void DetectorThread() {
           (int)((p.diveGlideMatch / 100.0f) * (p.roi_w * p.roi_h));
 
       bool currentFortniteFocused = g_fortniteFocusedCache.load();
-      g_isCursorVisible = IsCursorCurrentlyVisible();
+      
+      // Throttle the cursor check (v5.5.173) — calling User32 functions like
+      // GetCursorInfo every loop iteration adds CPU jitter. 16ms is plenty.
+      static ULONGLONG lastCursorCheck = 0;
+      ULONGLONG now = GetTickCount64();
+      if (now - lastCursorCheck >= 16) {
+        g_isCursorVisible = IsCursorCurrentlyVisible();
+        lastCursorCheck = now;
+      }
 
       // Only scan ROI when Fortnite is the foreground window
       if (currentFortniteFocused) {
