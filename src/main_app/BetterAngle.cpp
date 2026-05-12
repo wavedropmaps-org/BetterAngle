@@ -238,8 +238,8 @@ void DetectorThread() {
         if (nowDiving && !lastDiving && !g_blockInputActive.load() &&
             (GetTickCount64() - g_lastLockTime > 500)) {
           g_lastLockTime = GetTickCount64();
-          g_mouseSuspendedUntil = GetTickCount64() + 200;
-          g_lockDurationMs = 200;
+          g_mouseSuspendedUntil = GetTickCount64() + 300;
+          g_lockDurationMs = 300;
           SetEvent(g_lockEvent);
           g_logic.SetDivingState(true);
           LOG_INFO("Transition: glide->dive (200ms BlockInput)");
@@ -248,8 +248,8 @@ void DetectorThread() {
         else if (!nowDiving && lastDiving && !g_blockInputActive.load() &&
                  (GetTickCount64() - g_lastLockTime > 500)) {
           g_lastLockTime = GetTickCount64();
-          g_mouseSuspendedUntil = GetTickCount64() + 200;
-          g_lockDurationMs = 200;
+          g_mouseSuspendedUntil = GetTickCount64() + 300;
+          g_lockDurationMs = 300;
           SetEvent(g_lockEvent);
           g_logic.SetDivingState(false);
           LOG_INFO("Transition: dive->glide (200ms BlockInput)");

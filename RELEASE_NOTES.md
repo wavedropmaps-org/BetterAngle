@@ -1,5 +1,5 @@
 ### BetterAngle Pro v5.5.229
-- Automated build release.
+- **tweak: FOV transition BlockInput duration increased from 200ms to 300ms** for both glide→dive and dive→glide.
 
 ### BetterAngle Pro v5.5.228
 - **tweak: Alt-tab BlockInput lock duration reduced from 300ms to 150ms.**
