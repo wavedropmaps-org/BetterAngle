@@ -356,21 +356,8 @@ LRESULT CALLBACK MsgWndProc(HWND hWnd, UINT message, WPARAM wParam,
   if (message == WM_INPUT) {
     int dx = GetRawInputDeltaX(lParam);
 
-    bool blockActive = g_blockInputActive.load();
-    static bool s_prevBlockActive = false;
-    static ULONGLONG s_blockEndTime = 0;
-    if (s_prevBlockActive && !blockActive)
-      s_blockEndTime = GetTickCount64();
-    s_prevBlockActive = blockActive;
-
-    // After BlockInput releases, ignore cursor visibility for 200ms.
-    // BlockInput disrupts Fortnite's cursor-hiding state; the game takes
-    // up to ~1s to re-hide it, which would otherwise freeze angle tracking.
-    ULONGLONG now2 = GetTickCount64();
-    bool cursorBlocking = g_isCursorVisible && (now2 - s_blockEndTime > 200);
-
     const bool allowAngleUpdate =
-        (g_fortniteFocusedCache && !cursorBlocking && !blockActive);
+        (g_fortniteFocusedCache && !g_isCursorVisible && !g_blockInputActive.load());
 
     if (allowAngleUpdate) {
       g_logic.Update(dx);

@@ -1,5 +1,5 @@
 ### BetterAngle Pro v5.5.223
-- Automated build release.
+- **revert: Remove incorrect cursor grace period from v5.5.222.** Cursor is never visible during skydive/glide gameplay so the grace period was dead code targeting the wrong problem.
 
 ### BetterAngle Pro v5.5.222
 - **fix: Angle frozen for ~1s after BlockInput releases.** `BlockInput(TRUE)` disrupts Fortnite's cursor-hiding state. After `BlockInput(FALSE)`, the game takes up to ~1s to re-hide the cursor, during which `CURSOR_SHOWING` is set and `!g_isCursorVisible` was blocking angle updates. Added a 200ms grace period after `g_blockInputActive` drops false where cursor visibility is ignored, so angle resumes immediately after the lock regardless of how long the game takes to re-hide the cursor.
