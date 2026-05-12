@@ -1,5 +1,5 @@
-### BetterAngle Pro v5.5.193
-- Automated build release.
+### BetterAngle Pro v5.5.194
+- **fix: Safe Revert to Scalar Matching.** Reverted the pixel-matching engine back to the original one-by-one scalar loop (L2 distance), removing all AVX2 SIMD logic to permanently eliminate thin-target pair-grouping glitches at the cost of a slight latency increase.
 
 ### BetterAngle Pro v5.5.192
 - fix: Stage 2 color pick now always samples from the frozen BitBlt snapshot instead of the live DXGI frame. DXGI was capturing the screen with the dim overlay on top, producing a darkened color that caused 0% match in-game.
