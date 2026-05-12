@@ -57,9 +57,10 @@ void StartBlockInputWorker() {
       g_blockInputActive = true;
       BlockInput(TRUE);
       int ticks = (durationMs + 9) / 10;
-      for (int i = 0; i < ticks && IsFortniteForeground(); i++) {
+      for (int i = 0; i < ticks; i++) {
         Sleep(10);
-        if (g_lockDurationMs.load() == 0 && i > 0) break; // Emergency release signal
+        if (!g_fortniteFocusedCache.load()) break; // Focus lost — abort early
+        if (g_lockDurationMs.load() == 0) break;   // Emergency release signal
       }
       BlockInput(FALSE);
       g_blockInputActive = false;
