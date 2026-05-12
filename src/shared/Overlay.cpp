@@ -460,33 +460,34 @@ void DrawOverlay(HWND hwnd, double angle, bool showCrosshair) {
       s_angleFontSmall = new Font(s_ff, 48, FontStyleBold, UnitPixel);
     Font *useFont = (decimals == 2) ? s_angleFontSmall : s_angleFont;
 
-    // Measure each segment and draw left-to-right, centred in the box
-    RectF layoutRect(float(rx), float(ry + 26), float(rw), 80.0f);
-    StringFormat fmtLeft;
-    fmtLeft.SetAlignment(StringAlignmentNear);
-    fmtLeft.SetLineAlignment(StringAlignmentNear);
+    // GenericTypographic eliminates GDI+ internal per-segment padding so
+    // back-to-back DrawString calls don't accumulate gaps between segments.
+    const StringFormat *sfTypo = StringFormat::GenericTypographic();
 
-    // First measure total width to centre it
+    // Measure total width for centering (measure the full string as one unit)
+    std::wstring fullAngleStr = wholeStr + dec1Str + (decimals == 2 ? dec2Str : L"") + degStr;
+    RectF mTotal;
+    graphics.MeasureString(fullAngleStr.c_str(), -1, useFont, PointF(0, 0), sfTypo, &mTotal);
+
     RectF mWhole, mDec1, mDec2, mDeg;
-    graphics.MeasureString(wholeStr.c_str(), -1, useFont, PointF(0, 0), &mWhole);
-    graphics.MeasureString(dec1Str.c_str(), -1, useFont, PointF(0, 0), &mDec1);
+    graphics.MeasureString(wholeStr.c_str(), -1, useFont, PointF(0, 0), sfTypo, &mWhole);
+    graphics.MeasureString(dec1Str.c_str(), -1, useFont, PointF(0, 0), sfTypo, &mDec1);
     if (decimals == 2)
-      graphics.MeasureString(dec2Str.c_str(), -1, useFont, PointF(0, 0), &mDec2);
-    graphics.MeasureString(degStr.c_str(), -1, useFont, PointF(0, 0), &mDeg);
+      graphics.MeasureString(dec2Str.c_str(), -1, useFont, PointF(0, 0), sfTypo, &mDec2);
+    graphics.MeasureString(degStr.c_str(), -1, useFont, PointF(0, 0), sfTypo, &mDeg);
 
-    float totalW = mWhole.Width + mDec1.Width + (decimals == 2 ? mDec2.Width : 0) + mDeg.Width;
-    float startX = float(rx) + (float(rw) - totalW) / 2.0f;
+    float startX = float(rx) + (float(rw) - mTotal.Width) / 2.0f;
     float textY = float(ry + 30);
 
-    graphics.DrawString(wholeStr.c_str(), -1, useFont, PointF(startX, textY), &greenBrush);
+    graphics.DrawString(wholeStr.c_str(), -1, useFont, PointF(startX, textY), sfTypo, &greenBrush);
     startX += mWhole.Width;
-    graphics.DrawString(dec1Str.c_str(), -1, useFont, PointF(startX, textY), &cyanBrush);
+    graphics.DrawString(dec1Str.c_str(), -1, useFont, PointF(startX, textY), sfTypo, &cyanBrush);
     startX += mDec1.Width;
     if (decimals == 2) {
-      graphics.DrawString(dec2Str.c_str(), -1, useFont, PointF(startX, textY), &yellowBrush);
+      graphics.DrawString(dec2Str.c_str(), -1, useFont, PointF(startX, textY), sfTypo, &yellowBrush);
       startX += mDec2.Width;
     }
-    graphics.DrawString(degStr.c_str(), -1, useFont, PointF(startX, textY), &degBrush);
+    graphics.DrawString(degStr.c_str(), -1, useFont, PointF(startX, textY), sfTypo, &degBrush);
 
     // Match % label
     int matchCount = g_matchCount.load();

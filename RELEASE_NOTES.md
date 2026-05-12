@@ -1,3 +1,6 @@
+### BetterAngle Pro v5.5.197
+- **fix: HUD angle segment spacing.** Switched to `StringFormat::GenericTypographic()` for all angle digit measurements and draws, eliminating the per-segment internal padding that GDI+ normally adds. The whole number, decimal point, and decimal digits now sit flush with no gaps.
+
 ### BetterAngle Pro v5.5.196
 - Automated build release.
 
