@@ -1,5 +1,8 @@
+### BetterAngle Pro v5.5.222
+- Automated build release.
+
 ### BetterAngle Pro v5.5.221
-- **fix: Angle tracking resumes instantly when BlockInput releases.** Previously `g_mouseSuspendedUntil` (a timer) was gating raw input angle updates, causing the angle to stay frozen for the remainder of the timer even after `BlockInput(FALSE)` had already fired. Now the angle gate is tied directly to `g_blockInputActive` — the moment the BlockInput worker calls `BlockInput(FALSE)`, angle tracking resumes. The LOCKING UI indicator still uses `g_mouseSuspendedUntil` unchanged.
+- **fix: Angle tracking resumes instantly when BlockInput releases.** Previously `g_mouseSuspendedUntil` (a timer) was gating raw input angle updates, causing the angle to stay frozen for the remainder of the timer even after `BlockInput(FALSE)` had already fired. Now the angle gate is tied directly to `g_blockInputActive` ? the moment the BlockInput worker calls `BlockInput(FALSE)`, angle tracking resumes. The LOCKING UI indicator still uses `g_mouseSuspendedUntil` unchanged.
 
 ### BetterAngle Pro v5.5.220
 - **tweak: Alt-tab BlockInput lock duration increased from 250ms to 300ms.**
