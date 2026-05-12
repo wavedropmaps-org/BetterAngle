@@ -1,3 +1,6 @@
+### BetterAngle Pro v5.5.224
+- Automated build release.
+
 ### BetterAngle Pro v5.5.223
 - **revert: Remove incorrect cursor grace period from v5.5.222.** Cursor is never visible during skydive/glide gameplay so the grace period was dead code targeting the wrong problem.
 
