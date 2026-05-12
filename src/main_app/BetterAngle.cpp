@@ -238,19 +238,19 @@ void DetectorThread() {
         if (nowDiving && !lastDiving && !g_blockInputActive.load() &&
             (GetTickCount64() - g_lastLockTime > 500)) {
           g_lastLockTime = GetTickCount64();
-          g_mouseSuspendedUntil = GetTickCount64() + 200;
-          g_lockDurationMs = 200;
+          g_mouseSuspendedUntil = GetTickCount64() + 350;
+          g_lockDurationMs = 350;
           SetEvent(g_lockEvent);
-          LOG_INFO("Transition: glide->dive (200ms BlockInput)");
+          LOG_INFO("Transition: glide->dive (350ms BlockInput)");
         }
         // Edge: Diving -> Gliding (Nitro)
         else if (!nowDiving && lastDiving && !g_blockInputActive.load() &&
                  (GetTickCount64() - g_lastLockTime > 500)) {
           g_lastLockTime = GetTickCount64();
-          g_mouseSuspendedUntil = GetTickCount64() + 250;
-          g_lockDurationMs = 250;
+          g_mouseSuspendedUntil = GetTickCount64() + 350;
+          g_lockDurationMs = 350;
           SetEvent(g_lockEvent);
-          LOG_INFO("Transition: dive->glide (250ms BlockInput)");
+          LOG_INFO("Transition: dive->glide (350ms BlockInput)");
         }
       }
 
