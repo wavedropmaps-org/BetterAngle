@@ -1,5 +1,8 @@
+### BetterAngle Pro v5.5.213
+- Automated build release.
+
 ### BetterAngle Pro v5.5.212
-- **fix: Decimal digit display bug.** The HUD was extracting decimal digits by re-multiplying a `double` by 10 or 100 and casting to `int`, which fails when floating-point representation rounds the result down (e.g. `179.3 * 10.0 = 1792.9999...` → `(int) = 1792` → shows `.2` instead of `.3`). Fixed by converting to a scaled integer once with `llround`, then using pure integer `%` and `/` for all digit extraction — guaranteed correct for every angle.
+- **fix: Decimal digit display bug.** The HUD was extracting decimal digits by re-multiplying a `double` by 10 or 100 and casting to `int`, which fails when floating-point representation rounds the result down (e.g. `179.3 * 10.0 = 1792.9999...` ? `(int) = 1792` ? shows `.2` instead of `.3`). Fixed by converting to a scaled integer once with `llround`, then using pure integer `%` and `/` for all digit extraction ? guaranteed correct for every angle.
 - **fix: `Norm360` slow-path removed.** Replaced `while` subtraction loops with `fmod`, which is O(1) regardless of how large the accumulated angle value is.
 
 ### BetterAngle Pro v5.5.211
