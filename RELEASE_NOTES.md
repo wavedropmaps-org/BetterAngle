@@ -1,5 +1,8 @@
+### BetterAngle Pro v5.5.215
+- Automated build release.
+
 ### BetterAngle Pro v5.5.214
-- **fix: BlockInput lock breaking after 10ms.** `g_lockDurationMs.exchange(0)` zeroes the value the instant the worker reads it, so the `g_lockDurationMs.load() == 0` check inside the loop was always true and broke the lock after a single tick. Removed that check entirely — the loop now runs for the full requested duration and only exits early if Fortnite loses focus (via `g_fortniteFocusedCache`), which is the same abort mechanism used by the FOV transition locks.
+- **fix: BlockInput lock breaking after 10ms.** `g_lockDurationMs.exchange(0)` zeroes the value the instant the worker reads it, so the `g_lockDurationMs.load() == 0` check inside the loop was always true and broke the lock after a single tick. Removed that check entirely ? the loop now runs for the full requested duration and only exits early if Fortnite loses focus (via `g_fortniteFocusedCache`), which is the same abort mechanism used by the FOV transition locks.
 
 ### BetterAngle Pro v5.5.213
 - **fix: Alt-tab BlockInput lock not holding (0ms effective lock).** The BlockInput worker loop had `IsFortniteForeground()` as its loop *condition*, evaluated before the first `Sleep(10)`. During the alt-tab animation, Windows briefly flickers the foreground window (taskbar/switcher) before settling on Fortnite ? so the worker thread's cold `thread_local` cache returned `false` on the very first check, the loop body never ran, and `BlockInput(FALSE)` fired instantly after `BlockInput(TRUE)`. Fixed by removing the unreliable direct call from the loop condition and instead checking `g_fortniteFocusedCache` (the value maintained by FocusMonitorThread) inside the loop body after the first sleep tick has already elapsed.
