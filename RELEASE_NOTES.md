@@ -1,5 +1,5 @@
 ### BetterAngle Pro v5.5.217
-- Automated build release.
+- **tweak: Alt-tab BlockInput lock duration reduced from 400ms to 250ms.**
 
 ### BetterAngle Pro v5.5.216
 - **fix: Alt-tab lock ROI box never showed LOCKING state.** The alt-tab lock in `FocusMonitorThread` was signaling `BlockInput` but not setting `g_mouseSuspendedUntil`, so the ROI visualizer (which shows purple LOCKING when that timer is active) always showed GLIDING/DIVING during the alt-tab lock. Now sets `g_mouseSuspendedUntil = GetTickCount64() + 400` before signaling the worker, matching what the FOV transition locks do.
