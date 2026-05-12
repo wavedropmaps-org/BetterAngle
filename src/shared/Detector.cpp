@@ -60,10 +60,11 @@ FovDetector::~FovDetector() {
 // ---------- DXGI init / teardown -------------------------------------------
 
 void FovDetector::ReleaseDXGI() {
-  if (m_stagingTex)  { m_stagingTex->Release();  m_stagingTex  = nullptr; }
-  if (m_duplication) { m_duplication->Release(); m_duplication = nullptr; }
-  if (m_d3dCtx)      { m_d3dCtx->Release();      m_d3dCtx      = nullptr; }
-  if (m_d3dDevice)   { m_d3dDevice->Release();   m_d3dDevice   = nullptr; }
+  if (m_twStagingTex) { m_twStagingTex->Release(); m_twStagingTex = nullptr; }
+  if (m_stagingTex)   { m_stagingTex->Release();   m_stagingTex   = nullptr; }
+  if (m_duplication)  { m_duplication->Release();  m_duplication  = nullptr; }
+  if (m_d3dCtx)       { m_d3dCtx->Release();       m_d3dCtx       = nullptr; }
+  if (m_d3dDevice)    { m_d3dDevice->Release();     m_d3dDevice    = nullptr; }
   m_dxgiOk = false;
   m_stagingW = 0;
   m_stagingH = 0;
@@ -332,40 +333,156 @@ int FovDetector::ScanBitBlt(const RoiConfig &cfg, int earlyExitThreshold) {
   return match;
 }
 
-bool FovDetector::CheckTripwireGDI(const RoiConfig &cfg,
-                                    const int *tripwireActiveIdx,
-                                    COLORREF target, int tolerance) {
-  if (!tripwireActiveIdx) return false;
+// ---------- tripwire helpers -----------------------------------------------
 
-  HDC hdc = GetDC(NULL);
-  if (!hdc) return false;
+// Lazily create the shared 1×1 staging texture used by both LearnTripwire and
+// CheckTripwireDXGI. Returns false if creation fails.
+static bool EnsureTripwireStaging(ID3D11Device *dev, ID3D11Texture2D **tex) {
+  if (*tex) return true;
+  D3D11_TEXTURE2D_DESC sd{};
+  sd.Width = 1; sd.Height = 1; sd.MipLevels = 1; sd.ArraySize = 1;
+  sd.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+  sd.SampleDesc.Count = 1;
+  sd.Usage = D3D11_USAGE_STAGING;
+  sd.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+  return SUCCEEDED(dev->CreateTexture2D(&sd, nullptr, tex));
+}
 
-  struct { int x, y; } cells[9];
-  for (int gy = 0; gy < 3; gy++) {
-    for (int gx = 0; gx < 3; gx++) {
-      cells[gy * 3 + gx].x = cfg.monitorOffsetX + cfg.x + (cfg.w * (gx * 2 + 1)) / 6;
-      cells[gy * 3 + gx].y = cfg.monitorOffsetY + cfg.y + (cfg.h * (gy * 2 + 1)) / 6;
-    }
+bool FovDetector::LearnTripwire(const RoiConfig &cfg, int rx[3], int ry[3]) {
+  if (!m_dxgiOk || !m_duplication || cfg.w <= 0 || cfg.h <= 0) return false;
+
+  DXGI_OUTDUPL_FRAME_INFO fi{};
+  IDXGIResource *res = nullptr;
+  HRESULT hr = m_duplication->AcquireNextFrame(100, &fi, &res);
+  if (FAILED(hr)) return false;
+
+  ID3D11Texture2D *desktopTex = nullptr;
+  res->QueryInterface(__uuidof(ID3D11Texture2D), (void **)&desktopTex);
+  res->Release();
+  if (!desktopTex) { m_duplication->ReleaseFrame(); return false; }
+
+  D3D11_TEXTURE2D_DESC desc;
+  desktopTex->GetDesc(&desc);
+  if ((desc.Format != DXGI_FORMAT_B8G8R8A8_UNORM &&
+       desc.Format != DXGI_FORMAT_B8G8R8A8_UNORM_SRGB) ||
+      cfg.x < 0 || cfg.y < 0 ||
+      (UINT)(cfg.x + cfg.w) > desc.Width ||
+      (UINT)(cfg.y + cfg.h) > desc.Height) {
+    desktopTex->Release(); m_duplication->ReleaseFrame(); return false;
   }
 
-  int tr = GetRValue(target), tg = GetGValue(target), tb = GetBValue(target);
-  int tolSq = tolerance * tolerance;
+  // Copy the full ROI into the shared staging texture (resize if needed)
+  if (!m_stagingTex || m_stagingW != cfg.w || m_stagingH != cfg.h) {
+    if (m_stagingTex) { m_stagingTex->Release(); m_stagingTex = nullptr; }
+    D3D11_TEXTURE2D_DESC sd{};
+    sd.Width = (UINT)cfg.w; sd.Height = (UINT)cfg.h;
+    sd.MipLevels = 1; sd.ArraySize = 1;
+    sd.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+    sd.SampleDesc.Count = 1;
+    sd.Usage = D3D11_USAGE_STAGING;
+    sd.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+    if (FAILED(m_d3dDevice->CreateTexture2D(&sd, nullptr, &m_stagingTex))) {
+      desktopTex->Release(); m_duplication->ReleaseFrame(); return false;
+    }
+    m_stagingW = cfg.w; m_stagingH = cfg.h;
+  }
 
-  int matchCount = 0;
+  D3D11_BOX box{ (UINT)cfg.x, (UINT)cfg.y, 0,
+                 (UINT)(cfg.x + cfg.w), (UINT)(cfg.y + cfg.h), 1 };
+  m_d3dCtx->CopySubresourceRegion(m_stagingTex, 0, 0, 0, 0, desktopTex, 0, &box);
+  desktopTex->Release();
+  m_duplication->ReleaseFrame();
+
+  D3D11_MAPPED_SUBRESOURCE mapped{};
+  hr = m_d3dCtx->Map(m_stagingTex, 0, D3D11_MAP_READ, 0, &mapped);
+  if (FAILED(hr)) return false;
+
+  int tr = GetRValue(cfg.target), tg = GetGValue(cfg.target), tb = GetBValue(cfg.target);
+  int tolSq = cfg.tolerance * cfg.tolerance;
+  int midY  = cfg.h / 2;
+  int found = 0;
+
+  // One representative matching pixel per horizontal third of the ROI.
+  // Spiral outward from mid-height so we bias toward the center of the ROI.
   for (int k = 0; k < 3; k++) {
-    int idx = tripwireActiveIdx[k];
-    if (idx >= 0 && idx < 9) {
-      COLORREF c = GetPixel(hdc, cells[idx].x, cells[idx].y);
-      if (c != CLR_INVALID) {
-        int r = GetRValue(c), g = GetGValue(c), b = GetBValue(c);
+    int xStart = (cfg.w * k) / 3;
+    int xEnd   = (cfg.w * (k + 1)) / 3;
+    // Default fallback: geometric center of this third
+    rx[k] = (xStart + xEnd) / 2;
+    ry[k] = midY;
+    for (int dy = 0; dy < cfg.h; dy++) {
+      int yOff = (dy % 2 == 0) ? (midY + dy / 2) : (midY - (dy + 1) / 2);
+      if (yOff < 0 || yOff >= cfg.h) continue;
+      const DWORD *row = reinterpret_cast<const DWORD *>(
+          static_cast<const BYTE *>(mapped.pData) + yOff * mapped.RowPitch);
+      bool hit = false;
+      for (int x = xStart; x < xEnd && !hit; x++) {
+        DWORD pix = row[x];
+        int r = (int)((pix >> 16) & 0xFF);
+        int g = (int)((pix >> 8)  & 0xFF);
+        int b = (int)(pix & 0xFF);
         int dr = r - tr, dg = g - tg, db = b - tb;
-        if ((dr * dr + dg * dg + db * db) <= tolSq) {
-          matchCount++;
+        if (dr * dr + dg * dg + db * db <= tolSq) {
+          rx[k] = x; ry[k] = yOff; hit = true; found++;
         }
       }
+      if (hit) break;
     }
   }
 
-  ReleaseDC(NULL, hdc);
-  return matchCount >= 2;
+  m_d3dCtx->Unmap(m_stagingTex, 0);
+  return found >= 2;
+}
+
+bool FovDetector::CheckTripwireDXGI(const RoiConfig &cfg,
+                                     const int rx[3], const int ry[3]) {
+  if (!m_dxgiOk || !m_duplication) return false;
+
+  DXGI_OUTDUPL_FRAME_INFO fi{};
+  IDXGIResource *res = nullptr;
+  HRESULT hr = m_duplication->AcquireNextFrame(0, &fi, &res);
+  if (FAILED(hr)) return false;
+
+  ID3D11Texture2D *desktopTex = nullptr;
+  res->QueryInterface(__uuidof(ID3D11Texture2D), (void **)&desktopTex);
+  res->Release();
+  if (!desktopTex) { m_duplication->ReleaseFrame(); return false; }
+
+  D3D11_TEXTURE2D_DESC desc;
+  desktopTex->GetDesc(&desc);
+  if (desc.Format != DXGI_FORMAT_B8G8R8A8_UNORM &&
+      desc.Format != DXGI_FORMAT_B8G8R8A8_UNORM_SRGB) {
+    desktopTex->Release(); m_duplication->ReleaseFrame(); return false;
+  }
+
+  if (!EnsureTripwireStaging(m_d3dDevice, &m_twStagingTex)) {
+    desktopTex->Release(); m_duplication->ReleaseFrame(); return false;
+  }
+
+  int tr = GetRValue(cfg.target), tg = GetGValue(cfg.target), tb = GetBValue(cfg.target);
+  int tolSq = cfg.tolerance * cfg.tolerance;
+  int matches = 0;
+
+  for (int k = 0; k < 3; k++) {
+    int px = cfg.x + rx[k];
+    int py = cfg.y + ry[k];
+    if (px < 0 || py < 0 || (UINT)px >= desc.Width || (UINT)py >= desc.Height)
+      continue;
+    D3D11_BOX box{ (UINT)px, (UINT)py, 0, (UINT)(px + 1), (UINT)(py + 1), 1 };
+    m_d3dCtx->CopySubresourceRegion(m_twStagingTex, 0, 0, 0, 0, desktopTex, 0, &box);
+    D3D11_MAPPED_SUBRESOURCE mapped{};
+    if (SUCCEEDED(m_d3dCtx->Map(m_twStagingTex, 0, D3D11_MAP_READ, 0, &mapped))) {
+      DWORD pix = *static_cast<const DWORD *>(mapped.pData);
+      m_d3dCtx->Unmap(m_twStagingTex, 0);
+      int r = (int)((pix >> 16) & 0xFF);
+      int g = (int)((pix >> 8)  & 0xFF);
+      int b = (int)(pix & 0xFF);
+      int dr = r - tr, dg = g - tg, db = b - tb;
+      if (dr * dr + dg * dg + db * db <= tolSq) matches++;
+    }
+  }
+
+  desktopTex->Release();
+  m_duplication->ReleaseFrame();
+  return matches >= 2;
 }

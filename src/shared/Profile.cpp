@@ -87,6 +87,18 @@ bool Profile::Load(const std::wstring &path) {
     screenIndex = 0;
   }
 
+  if (content.find("\"tripwireValid\"") != std::string::npos) {
+    tripwireValid  = extractDouble("tripwireValid") > 0.5;
+    tripwire_rx[0] = (int)extractDouble("tripwire_rx0");
+    tripwire_rx[1] = (int)extractDouble("tripwire_rx1");
+    tripwire_rx[2] = (int)extractDouble("tripwire_rx2");
+    tripwire_ry[0] = (int)extractDouble("tripwire_ry0");
+    tripwire_ry[1] = (int)extractDouble("tripwire_ry1");
+    tripwire_ry[2] = (int)extractDouble("tripwire_ry2");
+  } else {
+    tripwireValid = false;
+  }
+
   // Load Keybinds
   keybinds.toggleMod = (UINT)extractDouble("kb_toggleMod");
   keybinds.toggleKey = (UINT)extractDouble("kb_toggleKey");
@@ -243,6 +255,13 @@ bool Profile::Save(const std::wstring &path) {
   ss << "  \"crossAngle\": " << crossAngle << ",\n";
   ss << "  \"crossPulse\": " << (crossPulse ? 1 : 0) << ",\n";
 
+  ss << "  \"tripwireValid\": " << (tripwireValid ? 1 : 0) << ",\n";
+  ss << "  \"tripwire_rx0\": " << tripwire_rx[0] << ",\n";
+  ss << "  \"tripwire_rx1\": " << tripwire_rx[1] << ",\n";
+  ss << "  \"tripwire_rx2\": " << tripwire_rx[2] << ",\n";
+  ss << "  \"tripwire_ry0\": " << tripwire_ry[0] << ",\n";
+  ss << "  \"tripwire_ry1\": " << tripwire_ry[1] << ",\n";
+  ss << "  \"tripwire_ry2\": " << tripwire_ry[2] << ",\n";
   ss << "  \"crosshairPresets\": [\n";
   for (size_t i = 0; i < crosshairPresets.size(); i++) {
     const auto &cp = crosshairPresets[i];

@@ -163,6 +163,27 @@ void DetectorThread() {
         // Store screen-space offset for BitBlt fallback
         cfg.monitorOffsetX = mRect.left;
         cfg.monitorOffsetY = mRect.top;
+        // Tripwire pre-arm: check 3 learned pixels before the full scan.
+        // If 2-of-3 match while we're in gliding state, fire the lock ~200µs
+        // before the full ROI scan would have confirmed the transition.
+        if (p.tripwireValid && !lastDiving &&
+            !g_blockInputActive.load() &&
+            GetTickCount64() >= g_mouseSuspendedUntil &&
+            (GetTickCount64() - g_lastLockTime > 500)) {
+          if (g_detector.CheckTripwireDXGI(cfg, p.tripwire_rx, p.tripwire_ry)) {
+            g_lastLockTime        = GetTickCount64();
+            g_mouseSuspendedUntil = GetTickCount64() + 200;
+            g_lockDurationMs      = 200;
+            SetEvent(g_lockEvent);
+            lastDiving = true;
+            g_isDiving = true;
+            g_logic.SetDivingState(true);
+            LOG_INFO("Tripwire pre-arm fired: glide->dive (200ms BlockInput)");
+            _mm_pause();
+            continue;
+          }
+        }
+
         ULONGLONG startMs = GetTickCount64();
         int scanResult = g_detector.Scan(cfg, g_requiredMatchCount.load());
         ULONGLONG endMs = GetTickCount64();
@@ -441,18 +462,9 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
 
       // Finalize and Exit Selection
       LOG_INFO("Resetting selection state...");
-      g_currentSelection = NONE;
-      g_isSelectionActive = false;
-      if (g_screenSnapshot) {
-        DeleteObject(g_screenSnapshot);
-        g_screenSnapshot = NULL;
-      }
-      SetWindowLong(hWnd, GWL_EXSTYLE,
-                    GetWindowLong(hWnd, GWL_EXSTYLE) | WS_EX_TRANSPARENT);
-      InvalidateRect(hWnd, NULL, FALSE);
-      g_forceRedraw = true;
-      LOG_INFO("Stage 2 Redraw Forced Handle Cleaned.");
 
+      // Update profile and learn tripwire BEFORE setting NONE so the
+      // DetectorThread remains idle (it skips scanning when selection != NONE).
       if (!g_allProfiles.empty()) {
         Profile &p = g_allProfiles[g_selectedProfileIdx];
         RECT mRect = GetMonitorRectByIndex(g_screenIndex);
@@ -461,6 +473,22 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
         p.roi_y = g_selectionRect.top - mRect.top;
         p.roi_w = g_selectionRect.right - g_selectionRect.left;
         p.roi_h = g_selectionRect.bottom - g_selectionRect.top;
+
+        // Learn the 3 tripwire pixels from the live DXGI frame while the
+        // game is still in diving state (user just picked the colour).
+        RoiConfig learnCfg = {
+            p.roi_x, p.roi_y, p.roi_w, p.roi_h, p.target_color, p.tolerance};
+        learnCfg.monitorOffsetX = mRect.left;
+        learnCfg.monitorOffsetY = mRect.top;
+        p.tripwireValid = g_detector.LearnTripwire(
+            learnCfg, p.tripwire_rx, p.tripwire_ry);
+        if (p.tripwireValid)
+          LOG_INFO("Tripwire learned: (%d,%d) (%d,%d) (%d,%d)",
+                   p.tripwire_rx[0], p.tripwire_ry[0],
+                   p.tripwire_rx[1], p.tripwire_ry[1],
+                   p.tripwire_rx[2], p.tripwire_ry[2]);
+        else
+          LOG_INFO("Tripwire learning failed (no DXGI frame or insufficient matches)");
 
         // Save to the actual profile path
         std::wstring profilePath = GetProfilesPath() + p.name + L".json";
@@ -472,6 +500,18 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
         // needed
         p.Save(GetProfilesPath() + L"last_calibrated.json");
       }
+
+      g_currentSelection = NONE;
+      g_isSelectionActive = false;
+      if (g_screenSnapshot) {
+        DeleteObject(g_screenSnapshot);
+        g_screenSnapshot = NULL;
+      }
+      SetWindowLong(hWnd, GWL_EXSTYLE,
+                    GetWindowLong(hWnd, GWL_EXSTYLE) | WS_EX_TRANSPARENT);
+      InvalidateRect(hWnd, NULL, FALSE);
+      g_forceRedraw = true;
+      LOG_INFO("Stage 2 Redraw Forced Handle Cleaned.");
     }
     return 0;
 
