@@ -356,12 +356,8 @@ LRESULT CALLBACK MsgWndProc(HWND hWnd, UINT message, WPARAM wParam,
   if (message == WM_INPUT) {
     int dx = GetRawInputDeltaX(lParam);
 
-    ULONGLONG now = GetTickCount64();
-    bool isMouseSuspended =
-        (g_mouseSuspendedUntil > 0 && now < g_mouseSuspendedUntil);
-
     const bool allowAngleUpdate =
-        (g_fortniteFocusedCache && !g_isCursorVisible && !isMouseSuspended);
+        (g_fortniteFocusedCache && !g_isCursorVisible && !g_blockInputActive.load());
 
     if (allowAngleUpdate) {
       g_logic.Update(dx);
