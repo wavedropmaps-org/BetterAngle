@@ -1,5 +1,5 @@
 ### BetterAngle Pro v5.5.222
-- Automated build release.
+- **fix: Angle frozen for ~1s after BlockInput releases.** `BlockInput(TRUE)` disrupts Fortnite's cursor-hiding state. After `BlockInput(FALSE)`, the game takes up to ~1s to re-hide the cursor, during which `CURSOR_SHOWING` is set and `!g_isCursorVisible` was blocking angle updates. Added a 200ms grace period after `g_blockInputActive` drops false where cursor visibility is ignored, so angle resumes immediately after the lock regardless of how long the game takes to re-hide the cursor.
 
 ### BetterAngle Pro v5.5.221
 - **fix: Angle tracking resumes instantly when BlockInput releases.** Previously `g_mouseSuspendedUntil` (a timer) was gating raw input angle updates, causing the angle to stay frozen for the remainder of the timer even after `BlockInput(FALSE)` had already fired. Now the angle gate is tied directly to `g_blockInputActive` ? the moment the BlockInput worker calls `BlockInput(FALSE)`, angle tracking resumes. The LOCKING UI indicator still uses `g_mouseSuspendedUntil` unchanged.
