@@ -16,6 +16,10 @@
 ### BetterAngle Pro v5.5.196
 - Automated build release.
 
+### BetterAngle Pro v5.5.204
+- **perf: Early-Exit Scan logic.** The scanner now stops immediately once your required match percentage is reached. This reduces CPU usage during active locks.
+- **chore: Removed ineffective GDI sub-frame check.** Eliminates micro-stuttering caused by context-switching to the message queue during high-speed scans.
+
 ### BetterAngle Pro v5.5.199
 - **fix: Input ghosting / Auto-mantle fixed.** Removed unused keyboard raw input registration that caused Windows to delay key delivery (especially Space).
 - **fix: Alt-tab cooldown guard.** Added a timing guard to prevent firing a 400ms lock immediately after an FOV-edge lock if focus shifted.

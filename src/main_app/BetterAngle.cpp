@@ -156,7 +156,7 @@ void DetectorThread() {
         cfg.monitorOffsetX = mRect.left;
         cfg.monitorOffsetY = mRect.top;
         ULONGLONG startMs = GetTickCount64();
-        int scanResult = g_detector.Scan(cfg);
+        int scanResult = g_detector.Scan(cfg, g_requiredMatchCount.load());
         ULONGLONG endMs = GetTickCount64();
         ULONGLONG scanMs = endMs - startMs;
         g_detectionDelayMs = scanMs;
