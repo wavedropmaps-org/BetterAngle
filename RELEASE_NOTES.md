@@ -1,5 +1,5 @@
 ### BetterAngle Pro v5.5.211
-- Automated build release.
+- **fix: Build error — removed orphaned `g_lastScanUsedDxgi` assignments.** The identifier was written in `Detector.cpp` but never declared in `State.h` or defined in `State.cpp`, causing MSVC C2065 errors. The value was never read anywhere so the two assignments were simply removed.
 
 ### BetterAngle Pro v5.5.210
 - **perf: 3-Pixel Tripwire Pre-arm.** After ROI calibration, BetterAngle learns one representative matching pixel per horizontal third of the ROI. Before each full scan, those 3 pixels are checked via 3 ? 1?1 GPU copies (DXGI). If 2-of-3 match the target colour, the glide?dive lock fires immediately ? roughly 200?s faster than waiting for the full ROI scan to complete. The tripwire positions are persisted in the profile JSON and re-learned automatically whenever the user recalibrates.

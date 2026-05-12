@@ -124,7 +124,6 @@ int FovDetector::Scan(const RoiConfig &cfg, int earlyExitThreshold) {
   if (cfg.w <= 0 || cfg.h <= 0) return 0;
 
   if (m_dxgiOk && m_duplication) {
-    g_lastScanUsedDxgi = true;
     DXGI_OUTDUPL_FRAME_INFO fi{};
     IDXGIResource *res = nullptr;
     HRESULT hr = m_duplication->AcquireNextFrame(0, &fi, &res);
@@ -313,7 +312,6 @@ void FovDetector::EnsureResources(int w, int h) {
 }
 
 int FovDetector::ScanBitBlt(const RoiConfig &cfg, int earlyExitThreshold) {
-  g_lastScanUsedDxgi = false;
   EnsureResources(cfg.w, cfg.h);
   BitBlt(m_hdcMem, 0, 0, cfg.w, cfg.h, m_hdcScreen,
          cfg.x + cfg.monitorOffsetX, cfg.y + cfg.monitorOffsetY, SRCCOPY);
