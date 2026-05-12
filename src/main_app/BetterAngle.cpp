@@ -619,34 +619,43 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
       g_selectionRect = {cur.x, cur.y, cur.x, cur.y};
     } else if (g_currentSelection == SELECTING_COLOR) {
       LOG_INFO("Stage 2 LBUTTONDOWN executed");
-      // STAGE 2: Sample color from the frozen snapshot taken at Stage 1.
-      // We deliberately do NOT use DXGI here — DXGI captures the live screen
-      // which at this point has the dim overlay drawn on top, producing a
-      // darkened color that won't match the real game pixel the scanner sees.
-      // The BitBlt snapshot is the exact frame the user is viewing and clicking
-      // on, so it is the correct source of truth for the match threshold.
+      // STAGE 2: Sample color via DXGI (primary) with BitBlt snapshot fallback.
+      // The overlay window has WDA_EXCLUDEFROMCAPTURE set, so DXGI sees the
+      // pure underlying game pixel with no dim brush on top — exactly the same
+      // bytes the scanner will match against during gameplay. The BitBlt
+      // snapshot fallback fires only if DXGI is unavailable (device lost etc).
       LOG_INFO("Stage 2 LBUTTONDOWN: Starting to finalize selection");
       if (g_screenSnapshot) {
-        LOG_TRACE("Sampling color from g_screenSnapshot...");
-        HDC hdcScreen = GetDC(NULL);
-        HDC hdcMem = CreateCompatibleDC(hdcScreen);
-        HGDIOBJ hOld = SelectObject(hdcMem, g_screenSnapshot);
-
-        int sx = GetSystemMetrics(SM_XVIRTUALSCREEN);
-        int sy = GetSystemMetrics(SM_YVIRTUALSCREEN);
-
         POINT cur;
         GetCursorPos(&cur);
-        COLORREF chosen = GetPixel(hdcMem, cur.x - sx, cur.y - sy);
 
-        SelectObject(hdcMem, hOld);
-        DeleteDC(hdcMem);
-        ReleaseDC(NULL, hdcScreen);
+        // Primary: DXGI sample — bytes match scanner exactly.
+        RECT mRect = GetMonitorRectByIndex(g_screenIndex);
+        int monX = cur.x - mRect.left;
+        int monY = cur.y - mRect.top;
+        COLORREF dxgiPixel = 0;
+        bool gotDxgi = g_detector.SamplePixelDXGI(monX, monY, dxgiPixel);
 
+        // Fallback: BitBlt snapshot (bytes close but may differ on HDR/wide-gamut).
+        COLORREF snapshotPixel = 0;
+        if (!gotDxgi) {
+          HDC hdcScreen = GetDC(NULL);
+          HDC hdcMem = CreateCompatibleDC(hdcScreen);
+          HGDIOBJ hOld = SelectObject(hdcMem, g_screenSnapshot);
+          int sx = GetSystemMetrics(SM_XVIRTUALSCREEN);
+          int sy = GetSystemMetrics(SM_YVIRTUALSCREEN);
+          snapshotPixel = GetPixel(hdcMem, cur.x - sx, cur.y - sy);
+          SelectObject(hdcMem, hOld);
+          DeleteDC(hdcMem);
+          ReleaseDC(NULL, hdcScreen);
+        }
+
+        COLORREF chosen = gotDxgi ? dxgiPixel : snapshotPixel;
         g_pickedColor = chosen;
         g_targetColor = chosen;
-        g_lastPickSource = 2;
-        LOG_INFO("Color picked: source=snapshot rgb=(%d,%d,%d)",
+        g_lastPickSource = gotDxgi ? 1 : 2;
+        LOG_INFO("Color picked: source=%s rgb=(%d,%d,%d)",
+                 gotDxgi ? "DXGI" : "snapshot-fallback",
                  GetRValue(chosen), GetGValue(chosen), GetBValue(chosen));
       }
 
@@ -1125,6 +1134,17 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
       WS_EX_TOPMOST | WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
       L"BetterAngleHUD", L"BetterAngle HUD", WS_POPUP, screenX, screenY,
       screenW, screenH, NULL, NULL, hInstance, NULL);
+
+  // Exclude the overlay from DXGI Desktop Duplication captures. Without this,
+  // WS_EX_LAYERED windows appear in DXGI frames — so the Stage 2 color picker
+  // was sampling the dim brush drawn on top of the game, not the raw game
+  // pixel. With this flag DWM hides the window from all DXGI captures so both
+  // the scanner and the DXGI color picker see the pure underlying game frame.
+  // Requires Windows 10 2004+ (build 19041). No-op on older builds.
+#ifndef WDA_EXCLUDEFROMCAPTURE
+#define WDA_EXCLUDEFROMCAPTURE 0x00000011
+#endif
+  SetWindowDisplayAffinity(g_hHUD, WDA_EXCLUDEFROMCAPTURE);
 
   AddSystrayIcon(g_hHUD);
 
