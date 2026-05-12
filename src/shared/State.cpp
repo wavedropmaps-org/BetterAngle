@@ -205,6 +205,7 @@ POINT g_startPoint = {0};
 
 std::string g_latestVersionOnline = "v" VERSION_STR;
 float g_currentAngle = 0.0f;
+std::atomic<int> g_hudDecimalPlaces{1}; // Default: 1 decimal place
 std::atomic<bool> g_isCursorVisible(false);
 AngleLogic g_logic(0.05);
 

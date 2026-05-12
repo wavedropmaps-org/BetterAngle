@@ -34,7 +34,7 @@ extern std::string g_lastVersionRun;
 #ifndef V_MAJ
 #define V_MAJ 5
 #define V_MIN 5
-#define V_PAT 156
+#define V_PAT 195
 #endif
 
 #define VERSION_STR APP_STR_Y(V_MAJ) "." APP_STR_Y(V_MIN) "." APP_STR_Y(V_PAT)
@@ -89,6 +89,7 @@ extern RECT g_selectionRect;
 extern POINT g_startPoint;
 extern std::string g_latestVersionOnline;
 extern float g_currentAngle;
+extern std::atomic<int> g_hudDecimalPlaces; // 1 or 2 decimal places for angle HUD
 extern std::atomic<bool> g_isCursorVisible;
 extern AngleLogic g_logic;
 extern int g_hudX;

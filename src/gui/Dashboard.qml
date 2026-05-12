@@ -119,6 +119,63 @@ Item {
                         }
                     }
 
+                    Text { text: "HUD ANGLE PRECISION"; color: "#666"; font.pixelSize: 11; font.bold: true; topPadding: 10 }
+                    Column {
+                        spacing: 4
+                        width: parent.width
+                        Text { text: "Decimal Places"; color: "#aaa"; font.pixelSize: 12 }
+                        ComboBox {
+                            id: decimalCombo
+                            width: parent.width
+                            model: ["1 Decimal Place", "2 Decimal Places"]
+                            currentIndex: backend.hudDecimalPlaces - 1
+                            onActivated: backend.hudDecimalPlaces = index + 1
+                            contentItem: Text {
+                                text: decimalCombo.displayText
+                                color: "white"
+                                verticalAlignment: Text.AlignVCenter
+                                leftPadding: 10
+                            }
+                            background: Rectangle {
+                                color: "#1c1c2e"
+                                radius: 4
+                                border.color: "#333"
+                                border.width: 1
+                            }
+                            delegate: ItemDelegate {
+                                width: decimalCombo.width
+                                contentItem: Text {
+                                    text: modelData
+                                    color: "white"
+                                    font.pixelSize: 13
+                                    elide: Text.ElideRight
+                                    verticalAlignment: Text.AlignVCenter
+                                }
+                                background: Rectangle {
+                                    color: highlighted ? "#33334d" : "#1c1c2e"
+                                }
+                            }
+                            popup: Popup {
+                                y: parent.height
+                                width: parent.width
+                                implicitHeight: Math.min(contentItem.implicitHeight, 200)
+                                padding: 1
+                                contentItem: ListView {
+                                    clip: true
+                                    implicitHeight: contentHeight
+                                    model: decimalCombo.delegateModel
+                                    currentIndex: decimalCombo.highlightedIndex
+                                    ScrollIndicator.vertical: ScrollIndicator { }
+                                }
+                                background: Rectangle {
+                                    color: "#1c1c2e"
+                                    radius: 4
+                                    border.color: "#333"
+                                }
+                            }
+                        }
+                    }
+
                     Text { text: "DISPLAY & MONITOR"; color: "#666"; font.pixelSize: 11; font.bold: true; topPadding: 10 }
                     Column {
                         spacing: 4

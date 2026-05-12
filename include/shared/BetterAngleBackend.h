@@ -15,6 +15,7 @@ class BetterAngleBackend : public QObject {
                  NOTIFY profileChanged)
   Q_PROPERTY(int screenIndex READ screenIndex WRITE setScreenIndex NOTIFY profileChanged)
   Q_PROPERTY(QStringList availableScreens READ availableScreens CONSTANT)
+  Q_PROPERTY(int hudDecimalPlaces READ hudDecimalPlaces WRITE setHudDecimalPlaces NOTIFY profileChanged)
 
   Q_PROPERTY(bool crosshairOn READ crosshairOn WRITE setCrosshairOn NOTIFY
                  crosshairChanged)
@@ -94,6 +95,9 @@ public:
   int screenIndex() const;
   void setScreenIndex(int v);
   QStringList availableScreens() const;
+
+  int hudDecimalPlaces() const;
+  void setHudDecimalPlaces(int v);
 
   bool crosshairOn() const;
   void setCrosshairOn(bool v);

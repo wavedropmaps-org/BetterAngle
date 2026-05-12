@@ -4,6 +4,7 @@
 #include <dwmapi.h>
 #include <fstream>
 #include <gdiplus.h>
+#include <immintrin.h>
 #include <iostream>
 #include <shlobj.h>
 #include <string>
@@ -56,7 +57,10 @@ void StartBlockInputWorker() {
       g_blockInputActive = true;
       BlockInput(TRUE);
       int ticks = (durationMs + 9) / 10;
-      for (int i = 0; i < ticks && IsFortniteForeground(); i++) Sleep(10);
+      for (int i = 0; i < ticks && IsFortniteForeground(); i++) {
+        Sleep(10);
+        if (g_lockDurationMs.load() == 0 && i > 0) break; // Emergency release signal
+      }
       BlockInput(FALSE);
       g_blockInputActive = false;
       g_lastLockTime = GetTickCount64();
@@ -64,18 +68,6 @@ void StartBlockInputWorker() {
   }).detach();
 }
 
-// Helper function to flush pending input messages before blocking
-static void FlushPendingInputMessages() {
-  MSG msg;
-  // Remove all pending keyboard and mouse messages from the queue
-  while (PeekMessageW(&msg, NULL, WM_KEYFIRST, WM_KEYLAST, PM_REMOVE)) {
-  }
-  while (PeekMessageW(&msg, NULL, WM_MOUSEFIRST, WM_MOUSELAST, PM_REMOVE)) {
-  }
-  // Also flush any other input messages
-  while (PeekMessageW(&msg, NULL, 0, 0, PM_REMOVE)) {
-  }
-}
 
 // High-frequency thread to detect Fortnite focus changes instantly (Alt-Tab
 // detection)
@@ -91,12 +83,15 @@ void FocusMonitorThread() {
     bool currentFortniteFocused = IsFortniteForeground();
     g_fortniteFocusedCache = currentFortniteFocused;
 
-    // Focus LOST edge: abort any active BlockInput immediately
+    // Focus LOST edge: abort any active BlockInput via the worker thread.
+    // We cannot call BlockInput(FALSE) here because Windows thread affinity
+    // rule means only the worker thread (which called BlockInput(TRUE)) can
+    // successfully unblock. Instead, zero the duration so the worker's
+    // Sleep loop exits on the next 10ms tick and calls BlockInput(FALSE).
     if (lastFortniteFocused && !currentFortniteFocused) {
       focusLostTime = GetTickCount64();
       if (g_blockInputActive.load()) {
-        BlockInput(FALSE);
-        g_blockInputActive = false;
+        g_lockDurationMs = 0;  // Signal worker to release immediately
       }
       g_mouseSuspendedUntil = 0;
     }
@@ -167,16 +162,20 @@ void DetectorThread() {
 
         // -1 means no new frame was available (DXGI timeout) — skip this cycle
         // entirely to avoid false edge detection from a stale matchCount of 0.
+        // Spin instead of Sleep(1) so we react to the next frame the instant
+        // it arrives (the prior 1ms nap was the dominant latency source).
         if (scanResult < 0) {
-          Sleep(1);
+          _mm_pause();
           continue;
         }
 
         g_matchCount = scanResult;
 
-        // Scanner CPU %: time spent scanning vs total loop period
-        int cpuPct = (scanMs > 0) ? (int)((scanMs * 100) / (scanMs + 10)) : 0;
-        g_scannerCpuPct = cpuPct;
+        // Scanner CPU %: with spin-wait the loop pegs one core when active.
+        // The old formula assumed a ~1ms cycle with Sleep(1) and read 0% in
+        // spin mode (scanMs is sub-ms / below GetTickCount64 resolution).
+        // Hard-coded binary metric: 100 when actively scanning, 0 otherwise.
+        g_scannerCpuPct = 100;
 
         // Peak match tracking (2s decay window)
         int currentMatch = g_matchCount.load();
@@ -235,7 +234,13 @@ void DetectorThread() {
       g_isDiving = nowDiving;
       g_logic.SetDivingState(nowDiving);
     }
-    Sleep(1); // CPU Fix: Drops usage from 100% to ~1%
+    // Spin (peg one core) only while actively scanning; otherwise idle politely.
+    // _mm_pause is a CPU hint that yields hyperthread cycles during a spin loop.
+    if (g_fortniteFocusedCache.load() && g_currentSelection == NONE) {
+      _mm_pause();
+    } else {
+      Sleep(10);
+    }
   }
   timeEndPeriod(1);
 }

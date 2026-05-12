@@ -1,5 +1,6 @@
 #include "shared/Detector.h"
 #include <algorithm>
+#include <immintrin.h>
 
 #pragma comment(lib, "dxgi.lib")
 #pragma comment(lib, "d3d11.lib")
@@ -131,7 +132,14 @@ int FovDetector::Scan(const RoiConfig &cfg) {
     IDXGIResource *res = nullptr;
     HRESULT hr = m_duplication->AcquireNextFrame(0, &fi, &res);
 
-    if (hr == DXGI_ERROR_WAIT_TIMEOUT) return -1;
+    if (hr == DXGI_ERROR_WAIT_TIMEOUT) {
+      // Bounded pause burst: caps the AcquireNextFrame poll rate at ~1M/s so
+      // we don't burn CPU on kernel-mode transitions when the spin loop in
+      // DetectorThread calls Scan back-to-back. ~16 _mm_pause iterations is
+      // ~1µs, well below scan latency.
+      for (int i = 0; i < 16; i++) _mm_pause();
+      return -1;
+    }
 
     if (FAILED(hr)) {
       // Device lost, mode change, or other failure. Don't recreate here
