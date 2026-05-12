@@ -241,6 +241,7 @@ void DetectorThread() {
           g_mouseSuspendedUntil = GetTickCount64() + 350;
           g_lockDurationMs = 350;
           SetEvent(g_lockEvent);
+          g_logic.SetDivingState(true);
           LOG_INFO("Transition: glide->dive (350ms BlockInput)");
         }
         // Edge: Diving -> Gliding (Nitro)
@@ -250,6 +251,7 @@ void DetectorThread() {
           g_mouseSuspendedUntil = GetTickCount64() + 350;
           g_lockDurationMs = 350;
           SetEvent(g_lockEvent);
+          g_logic.SetDivingState(false);
           LOG_INFO("Transition: dive->glide (350ms BlockInput)");
         }
       }
@@ -262,7 +264,9 @@ void DetectorThread() {
 
       lastDiving = nowDiving;
       g_isDiving = nowDiving;
-      g_logic.SetDivingState(nowDiving);
+      if (!g_blockInputActive.load()) {
+        g_logic.SetDivingState(nowDiving);
+      }
     }
     // Spin (peg one core) only while actively scanning; otherwise idle politely.
     // _mm_pause is a CPU hint that yields hyperthread cycles during a spin loop.
