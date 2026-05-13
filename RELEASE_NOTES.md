@@ -1,6 +1,9 @@
+### BetterAngle Pro v5.5.258
+- Automated build release.
+
 ### BetterAngle Pro v5.5.257
 - **Debugging: Color Selection Diagnostics**. Added comprehensive logging to trace screenshot capture, bitmap operations, and pixel sampling to identify color detection failures.
-- **Fix: Investigation Tools**. Enhanced logs capture CaptureDesktop() status, Stage 1→2 transitions, and GetPixel() return values for debugging the color selection flow.
+- **Fix: Investigation Tools**. Enhanced logs capture CaptureDesktop() status, Stage 1?2 transitions, and GetPixel() return values for debugging the color selection flow.
 
 ### BetterAngle Pro v5.5.256
 - Automated build release.
