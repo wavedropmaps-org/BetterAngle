@@ -1,3 +1,6 @@
+### BetterAngle Pro v5.5.242
+- Automated build release.
+
 ### BetterAngle Pro v5.5.241
 - **Stability Fix: Increased Skydive BlockInput to 700ms**. The shorter 300ms window was too aggressive for the legacy v5.5.86 sync logic. Increased back to 700ms to ensure angle stability during transitions. Alt-Tab remains at 200ms.
 
