@@ -423,6 +423,9 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
   switch (message) {
   case WM_CREATE:
     RefreshHotkeys(hWnd);
+    // Initialize system tray icon when window is fully created
+    AddSystrayIcon(hWnd, GetModuleHandle(NULL));
+    LOG_INFO("System tray icon added from WM_CREATE");
     return 0;
 
   case WM_HOTKEY:
@@ -1024,11 +1027,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
   int screenY = mRect.top;
 
   g_hHUD = CreateWindowEx(
-      WS_EX_TOPMOST | WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW,
+      WS_EX_TOPMOST | WS_EX_LAYERED | WS_EX_TRANSPARENT,
       L"BetterAngleHUD", L"BetterAngle HUD", WS_POPUP, screenX, screenY,
       screenW, screenH, NULL, NULL, hInstance, NULL);
 
-  AddSystrayIcon(g_hHUD);
   LOG_INFO("HUD created: hwnd=0x%p", g_hHUD);
   LogWindowInfo(L"HUD handle", g_hHUD);
   ShowControlPanel(); // Force Dashboard to show on startup
@@ -1063,7 +1065,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 
   SaveSettings();
 
-  RemoveSystrayIcon(g_hHUD);
   GdiplusShutdown(g_gdiplusToken);
   ShutdownEnhancedLogging();
 

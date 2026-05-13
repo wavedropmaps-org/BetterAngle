@@ -7,7 +7,7 @@
 #define WM_TRAYICON (WM_USER + 100)
 #define ID_TRAY_EXIT 2001
 
-void AddSystrayIcon(HWND hwnd);
+void AddSystrayIcon(HWND hwnd, HINSTANCE hInstance);
 void ShowTrayContextMenu(HWND hwnd);
 void RemoveSystrayIcon(HWND hwnd);
 
