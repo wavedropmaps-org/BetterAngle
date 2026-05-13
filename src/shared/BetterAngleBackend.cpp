@@ -202,6 +202,28 @@ QStringList BetterAngleBackend::availableScreens() const {
   return data.names;
 }
 
+int BetterAngleBackend::hudDecimalPlaces() const {
+  if (g_allProfiles.empty())
+    return g_hudDecimalPlaces.load();
+  return g_allProfiles[g_selectedProfileIdx].hudDecimalPlaces;
+}
+
+void BetterAngleBackend::setHudDecimalPlaces(int v) {
+  if (v < 1) v = 1;
+  if (v > 2) v = 2;
+  
+  g_hudDecimalPlaces = v;
+  
+  if (!g_allProfiles.empty()) {
+    Profile &p = g_allProfiles[g_selectedProfileIdx];
+    p.hudDecimalPlaces = v;
+    p.Save(GetProfilesPath() + p.name + L".json");
+  }
+  
+  SaveSettings();
+  emit profileChanged();
+}
+
 bool BetterAngleBackend::crosshairOn() const { return g_showCrosshair; }
 void BetterAngleBackend::setCrosshairOn(bool v) {
   g_showCrosshair = v;

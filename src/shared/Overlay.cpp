@@ -387,22 +387,68 @@ void DrawOverlay(HWND hwnd, double angle, bool showCrosshair) {
                         &fmtLabel, &labelBrush);
 
     // Angle text — L"\xB0" is the degree symbol (safe ASCII escape)
-    Font angleFont(&ff, 68, FontStyleBold, UnitPixel);
+    // Angle text — colour-coded segments for quick readability.
+    // Whole number = Green, 1st decimal = Cyan, 2nd decimal = Yellow.
     double dispAngle = std::abs(angle);
-    double roundedAngle = std::round(dispAngle * 10.0) / 10.0;
+    int decimals = g_hudDecimalPlaces.load();
+    double factor = (decimals == 2) ? 100.0 : 10.0;
+    double roundedAngle = std::round(dispAngle * factor) / factor;
     if (roundedAngle >= 360.0)
       roundedAngle -= 360.0;
-    std::wstring angleStr = FmtFloat(roundedAngle, 1) + L"\xB0";
-    Color angleCol =
-        g_isDiving ? Color(255, 0, 220, 255) : Color(255, 0, 210, 140);
-    SolidBrush angleBrush(angleCol);
 
-    StringFormat fmtAngle;
-    fmtAngle.SetAlignment(StringAlignmentCenter);
-    fmtAngle.SetLineAlignment(StringAlignmentNear);
-    graphics.DrawString(angleStr.c_str(), -1, &angleFont,
-                        RectF(float(rx), float(ry + 26), float(rw), 80.0f),
-                        &fmtAngle, &angleBrush);
+    // Split into segments
+    int wholePart = (int)roundedAngle;
+    int dec1 = (int)(roundedAngle * 10.0 + 0.05) % 10;
+    int dec2 = (int)(roundedAngle * 100.0 + 0.05) % 10;
+
+    // Build segment strings
+    std::wstring wholeStr = std::to_wstring(wholePart) + L".";
+    std::wstring dec1Str = std::to_wstring(dec1);
+    std::wstring dec2Str = (decimals == 2) ? std::to_wstring(dec2) : L"";
+    std::wstring degStr = L"\xB0";
+
+    // Colour definitions (bright, easily distinguishable)
+    SolidBrush greenBrush(Color(255, 100, 220, 100));  // Whole number
+    SolidBrush cyanBrush(Color(255, 0, 220, 255));     // 1st decimal
+    SolidBrush yellowBrush(Color(255, 255, 220, 50));   // 2nd decimal
+    SolidBrush degBrush(Color(180, 200, 200, 200));     // Degree symbol
+
+    // Use a slightly smaller font so 2-decimal numbers fit the box
+    static Font *s_angleFontSmall = nullptr;
+    if (!s_angleFontSmall)
+      s_angleFontSmall = new Font(&ff, 48, FontStyleBold, UnitPixel);
+    
+    Font *angleFontLarge = new Font(&ff, 68, FontStyleBold, UnitPixel);
+    Font *useFont = (decimals == 2) ? s_angleFontSmall : angleFontLarge;
+
+    // Measure each segment and draw left-to-right, centred in the box
+    StringFormat fmtLeft;
+    fmtLeft.SetAlignment(StringAlignmentNear);
+    fmtLeft.SetLineAlignment(StringAlignmentNear);
+
+    // First measure total width to centre it
+    RectF mWhole, mDec1, mDec2, mDeg;
+    graphics.MeasureString(wholeStr.c_str(), -1, useFont, PointF(0, 0), &mWhole);
+    graphics.MeasureString(dec1Str.c_str(), -1, useFont, PointF(0, 0), &mDec1);
+    if (decimals == 2)
+      graphics.MeasureString(dec2Str.c_str(), -1, useFont, PointF(0, 0), &mDec2);
+    graphics.MeasureString(degStr.c_str(), -1, useFont, PointF(0, 0), &mDeg);
+
+    float totalW = mWhole.Width + mDec1.Width + (decimals == 2 ? mDec2.Width : 0) + mDeg.Width;
+    float startX = float(rx) + (float(rw) - totalW) / 2.0f;
+    float textY = float(ry + 32);
+
+    graphics.DrawString(wholeStr.c_str(), -1, useFont, PointF(startX, textY), &greenBrush);
+    startX += mWhole.Width;
+    graphics.DrawString(dec1Str.c_str(), -1, useFont, PointF(startX, textY), &cyanBrush);
+    startX += mDec1.Width;
+    if (decimals == 2) {
+      graphics.DrawString(dec2Str.c_str(), -1, useFont, PointF(startX, textY), &yellowBrush);
+      startX += mDec2.Width;
+    }
+    graphics.DrawString(degStr.c_str(), -1, useFont, PointF(startX, textY), &degBrush);
+    
+    delete angleFontLarge;
 
     // Match % label
     Font subFont(&ff, 12, FontStyleBold, UnitPixel);

@@ -116,6 +116,7 @@ void DetectorThread() {
       g_logic.LoadProfile(p.sensitivityX);
       g_requiredMatchCount =
           (int)((p.diveGlideMatch / 100.0f) * (p.roi_w * p.roi_h));
+      g_hudDecimalPlaces = p.hudDecimalPlaces;
 
       bool currentFortniteFocused = g_fortniteFocusedCache.load();
       g_isCursorVisible = IsCursorCurrentlyVisible();

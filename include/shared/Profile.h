@@ -43,6 +43,7 @@ struct Profile {
   int tolerance = 5;
   float diveGlideMatch = 9.0f;
   int screenIndex = 0;
+  int hudDecimalPlaces = 2;
 
   // Crosshair Settings
   bool showCrosshair = false;

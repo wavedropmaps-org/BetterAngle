@@ -53,6 +53,7 @@ std::atomic<bool> g_physicalKeys[256] = {};
 std::atomic<bool> g_running(true);
 int g_screenIndex = 0;
 std::atomic<int> g_displayChangeGen{0};
+std::atomic<int> g_hudDecimalPlaces{2}; // Default to 2 decimal places as requested
 
 Profile g_currentProfile;
 std::vector<Profile> g_allProfiles;

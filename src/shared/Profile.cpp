@@ -87,6 +87,12 @@ bool Profile::Load(const std::wstring &path) {
     screenIndex = 0;
   }
 
+  if (content.find("\"hudDecimalPlaces\"") != std::string::npos) {
+    hudDecimalPlaces = (int)extractDouble("hudDecimalPlaces");
+  } else {
+    hudDecimalPlaces = 2; // Default to 2 for new profiles as requested
+  }
+
   // Load Keybinds
   keybinds.toggleMod = (UINT)extractDouble("kb_toggleMod");
   keybinds.toggleKey = (UINT)extractDouble("kb_toggleKey");
@@ -226,6 +232,7 @@ bool Profile::Save(const std::wstring &path) {
   ss << "  \"tolerance\": " << tolerance << ",\n";
   ss << "  \"diveGlideMatch\": " << diveGlideMatch << ",\n";
   ss << "  \"screenIndex\": " << screenIndex << ",\n";
+  ss << "  \"hudDecimalPlaces\": " << hudDecimalPlaces << ",\n";
   ss << "  \"kb_toggleMod\": " << keybinds.toggleMod << ",\n";
   ss << "  \"kb_toggleKey\": " << keybinds.toggleKey << ",\n";
   ss << "  \"kb_roiMod\": " << keybinds.roiMod << ",\n";
