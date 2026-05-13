@@ -646,7 +646,7 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
         // needed
         p.Save(GetProfilesPath() + L"last_calibrated.json");
       } else if (sampledColor == CLR_INVALID) {
-        LOG_WARNING("Profile NOT saved - color sampling failed, preventing invalid data from being stored");
+        LOG_INFO("Profile NOT saved - color sampling failed, preventing invalid data from being stored");
       }
     }
     return 0;
