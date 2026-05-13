@@ -1,3 +1,6 @@
+### BetterAngle Pro v5.5.246
+- Automated build release.
+
 ### BetterAngle Pro v5.5.245
 - **Emergency Revert: Restored Ultra-Legacy Build**. Rolled back the modern peak restoration. Reverted the codebase to the state of version 5.5.86 (with 700ms skydive stability).
 
