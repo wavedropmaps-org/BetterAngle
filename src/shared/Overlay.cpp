@@ -597,131 +597,17 @@ void DrawOverlay(HWND hwnd, double angle, bool showCrosshair) {
               std::to_wstring(g_scannerCpuPct.load()) + L"%",
               g_scannerCpuPct.load() < 50);
 
-      // Column 1: Ghost Fix & Forensics (v5.5.69)
-      static const int keys[] = {'W', 'A', 'S', 'D'};
-      static const wchar_t *names[] = {L"W", L"A", L"S", L"D"};
-
-      bool isLocked = suspended;
-      DrawRow(0, 1, L"Input Lock:", isLocked ? L"ACTIVE" : L"IDLE", !isLocked);
-
+      // Column 1: System Info (v5.5.247)
+      DrawRow(0, 1, L"Input Lock:", suspended ? L"ACTIVE" : L"IDLE", !suspended);
       DrawRow(1, 1, L"Lock Count:", std::to_wstring(g_lockCount.load()));
-      DrawRow(2, 1, L"Lock Duration:",
-              std::to_wstring(g_lockDurationMs.load()) + L" ms");
-
-      if (g_hasSynced) {
-        // GHOST STATUS: Instant problem identification.
-        // Uses INVERSE LOGIC matching the correction: only Make (typematic
-        // repeat) proves the user is still holding. Arrays are from the clean
-        // 200ms window after Restore (contamination-filtered).
-        // Combined logic: only Mk=1 Br=0 means still holding.
-        // post=1 + (Br=1 || Mk=0) → ghost-walk (restored but user released)
-        // post=0 + Mk=1 Br=0 → under-restore (corrected but user still holding)
-        std::wstring ghostStatus;
-        bool ghostOk = true;
-        for (int i = 0; i < 4; ++i) {
-          bool pre = g_preState[i].load();
-          bool post = g_postState[i].load();
-          bool brk = g_rawKeyUpDetected[keys[i]].load();
-          bool mk = g_rawKeyMakeDetected[keys[i]].load();
-          if (!pre)
-            continue;
-          bool shouldStillBePressed = mk && !brk;
-          if (post && !shouldStillBePressed) {
-            // Restored but user released (Br=1 or no Mk) → ghost-walk
-            ghostStatus += std::wstring(names[i]) + L":GHOST! ";
-            ghostOk = false;
-          } else if (!post && shouldStillBePressed) {
-            // Not restored but user still holding → under-restore
-            ghostStatus += std::wstring(names[i]) + L":UNDER ";
-            ghostOk = false;
-          }
-        }
-        if (ghostOk)
-          ghostStatus = L"CLEAN";
-        DrawRow(3, 1, L"Ghost Status:", ghostStatus, ghostOk);
-
-        int fb = g_activeFallback.load();
-        std::wstring fbStr =
-            (fb == 0) ? L"NONE"
-                      : (fb == 1 ? L"SHOCK-ONLY"
-                                 : (fb == 5 ? L"RAW-CORRECTED" : L"FAIL"));
-        DrawRow(4, 1, L"Fallback:", fbStr, fb == 0);
-        DrawRow(5, 1, L"Fix State:",
-                std::wstring(g_ghostFixInProgress ? L"RUNNING" : L"IDLE"),
-                !g_ghostFixInProgress);
-        DrawRow(6, 1, L"Fix Duration:",
-                std::to_wstring(g_ghostFixDurationMs.load()) + L" ms",
-                g_ghostFixDurationMs.load() < 400);
-        DrawRow(7, 1, L"Method:", L"HARD-RESET", true);
-
-        auto RawCell = [&](int vk) -> std::wstring {
-          bool brk = g_rawKeyUpDetected[vk].load();
-          bool mk = g_rawKeyMakeDetected[vk].load();
-          if (mk && brk)
-            return L"MB";
-          if (mk)
-            return L"M";
-          if (brk)
-            return L"B";
-          return L".";
-        };
-
-        auto OsCell = [&](int vk) -> wchar_t {
-          return (GetAsyncKeyState(vk) & 0x8000) ? L'1' : L'0';
-        };
-
-        std::wstring rawState = L"W:" + RawCell('W') + L" A:" + RawCell('A') +
-                                L" S:" + RawCell('S') + L" D:" + RawCell('D');
-        std::wstring osState = std::wstring(L"W:") + OsCell('W') + L" A:" +
-                               OsCell('A') + L" S:" + OsCell('S') + L" D:" +
-                               OsCell('D');
-        DrawRow(8, 1, L"Raw State:", rawState, true);
-        DrawRow(9, 1, L"OS State:", osState, true);
-
-        // Per-key forensics: pre/post/phys/Br/Mk
-        // pre = held before lock, post = after fix, phys = live OS read
-        // Br/Mk = Raw Input from clean 200ms window (contamination-filtered)
-        for (int i = 0; i < 4; ++i) {
-          bool pre = g_preState[i].load();
-          bool post = g_postState[i].load();
-          bool phys = (GetAsyncKeyState(keys[i]) & 0x8000) != 0;
-          bool brk = g_rawKeyUpDetected[keys[i]].load();
-          bool mk = g_rawKeyMakeDetected[keys[i]].load();
-
-          std::wstring val = std::wstring(pre ? L"1" : L"0") + L"/" +
-                             std::wstring(post ? L"1" : L"0") + L"/" +
-                             std::wstring(phys ? L"1" : L"0") + L" Br=" +
-                             std::wstring(brk ? L"1" : L"0") + L" Mk=" +
-                             std::wstring(mk ? L"1" : L"0");
-
-          // COMBINED LOGIC (v5.5.69): Only keep pressed if Mk=1 AND Br=0.
-          // Br=1 || Mk=0 → user released → post should be 0 (ghost killed)
-          // Br=0 && Mk=1 → still holding → post should be 1
-          bool rawConsistent = true;
-          if (pre) {
-            bool shouldStillBePressed = mk && !brk;
-            rawConsistent = (shouldStillBePressed ? post : !post);
-          }
-          DrawRow(10 + i, 1, names[i], val, pre ? rawConsistent : true);
-        }
-      } else {
-        DrawRow(3, 1, L"Ghost Status:", L"AWAITING FIRST LOCK", true);
-      }
-
-      DrawRow(14, 1, L"Input State:",
-              g_blockInputActive ? L"LOCKED" : L"UNLOCKED",
-              !g_blockInputActive);
-      DrawRow(15, 1, L"Version:", L"v" + std::wstring(VERSION_WSTR), true);
-
-      // Capture-path diagnostics (ported from v5.5.157).
-      // This build uses scalar BitBlt only (no DXGI).
-      DrawRow(16, 1, L"Capture Path:", L"BitBlt", true);
+      DrawRow(2, 1, L"Version:", L"v" + std::wstring(VERSION_WSTR), true);
+      DrawRow(3, 1, L"Capture Path:", L"BitBlt", true);
 
       COLORREF pc = g_targetColor;
       std::wstring rgbStr = L"(" + std::to_wstring(GetRValue(pc)) + L"," +
                             std::to_wstring(GetGValue(pc)) + L"," +
                             std::to_wstring(GetBValue(pc)) + L")";
-      DrawRow(17, 1, L"Target RGB:", rgbStr);
+      DrawRow(4, 1, L"Target RGB:", rgbStr);
     }
   }
 
