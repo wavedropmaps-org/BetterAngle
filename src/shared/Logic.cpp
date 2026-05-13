@@ -1,7 +1,6 @@
 #include "shared/Logic.h"
 #include "shared/State.h"
 #include <atomic>
-#include <cmath>
 #include <string>
 
 
@@ -53,7 +52,9 @@ void AngleLogic::BakeScale() {
 }
 
 double AngleLogic::Norm360(double a) const {
-  a = fmod(a, 360.0);
-  if (a < 0.0) a += 360.0;
+  while (a >= 360.0)
+    a -= 360.0;
+  while (a < 0.0)
+    a += 360.0;
   return a;
 }

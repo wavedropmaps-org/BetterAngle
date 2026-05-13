@@ -56,12 +56,6 @@ struct Profile {
   Keybinds keybinds;
   std::vector<CrosshairPreset> crosshairPresets;
 
-  // Tripwire pre-arm: 3 learned pixel positions (ROI-relative) that are
-  // checked before the full scan to fire the lock signal ~200µs earlier.
-  int  tripwire_rx[3]  = {0, 0, 0};
-  int  tripwire_ry[3]  = {0, 0, 0};
-  bool tripwireValid   = false;
-
   bool Load(const std::wstring &path);
   bool Save(const std::wstring &path);
 };

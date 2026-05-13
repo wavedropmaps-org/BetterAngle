@@ -1,5 +1,4 @@
 #include "shared/BetterAngleBackend.h"
-#include "shared/Detector.h"
 #include "shared/Input.h"
 #include "shared/Logic.h"
 #include "shared/Profile.h"
@@ -15,13 +14,11 @@
 #include <thread>
 #include <tlhelp32.h>
 #include <windows.h>
-#include <psapi.h>
 
 extern std::vector<Profile> g_allProfiles;
 extern int g_selectedProfileIdx;
 extern AngleLogic g_logic;
 extern HWND g_hHUD;
-extern FovDetector g_detector;
 
 static double g_pendingSetupSensX = 0.05;
 static double g_pendingSetupSensY = 0.05;
@@ -176,11 +173,8 @@ int BetterAngleBackend::screenIndex() const {
 }
 
 void BetterAngleBackend::setScreenIndex(int v) {
-  // Clamp to actual monitor count so invalid indices don't silently fall back
-  int monitorCount = GetSystemMetrics(SM_CMONITORS);
-  if (v >= monitorCount) v = monitorCount - 1;
-  if (v < 0) v = 0;
-
+  if (v < 0)
+    v = 0;
   g_screenIndex = v;
   if (!g_allProfiles.empty()) {
     Profile &p = g_allProfiles[g_selectedProfileIdx];
@@ -189,7 +183,7 @@ void BetterAngleBackend::setScreenIndex(int v) {
   }
   SaveSettings();
 
-  // Move the HUD window to the new monitor
+  // Move the HUD window to the new monitor (v5.5.76)
   if (g_hHUD) {
     RECT mRect = GetMonitorRectByIndex(v);
     SetWindowPos(g_hHUD, HWND_TOPMOST, mRect.left, mRect.top,
@@ -197,12 +191,6 @@ void BetterAngleBackend::setScreenIndex(int v) {
                  SWP_NOACTIVATE | SWP_SHOWWINDOW);
     g_forceRedraw = true;
   }
-
-  // Don't call ReinitDisplay here — DXGI re-init must happen on the detector
-  // thread to avoid races with in-flight Scan / SamplePixelDXGI. Bumping the
-  // generation counter signals the detector thread to do the re-init on its
-  // next iteration.
-  g_displayChangeGen.fetch_add(1);
 
   emit profileChanged();
 }
@@ -212,17 +200,6 @@ QStringList BetterAngleBackend::availableScreens() const {
   EnumDisplayMonitors(NULL, NULL, MonitorEnumProc,
                       reinterpret_cast<LPARAM>(&data));
   return data.names;
-}
-
-int BetterAngleBackend::hudDecimalPlaces() const {
-  return g_hudDecimalPlaces.load();
-}
-
-void BetterAngleBackend::setHudDecimalPlaces(int v) {
-  if (v < 1) v = 1;
-  if (v > 2) v = 2;
-  g_hudDecimalPlaces = v;
-  emit profileChanged();
 }
 
 bool BetterAngleBackend::crosshairOn() const { return g_showCrosshair; }
@@ -1048,6 +1025,19 @@ bool BetterAngleBackend::inputLocked() const {
 }
 bool BetterAngleBackend::isDiving() const { return g_isDiving; }
 
+QString BetterAngleBackend::lockTriggerReason() const {
+  int r = g_lockTriggerReason.load();
+  switch (r) {
+  case 1:
+    return QString::fromUtf8("Glide \xe2\x86\x92 Dive");
+  case 2:
+    return QString::fromUtf8("Dive \xe2\x86\x92 Glide");
+  case 3:
+    return "Alt-Tab Return";
+  default:
+    return "None";
+  }
+}
 
 int BetterAngleBackend::peakMatchPct() const {
   if (g_allProfiles.empty()) return 0;
@@ -1086,11 +1076,29 @@ QString BetterAngleBackend::physicalKeyStates() const {
   return states;
 }
 
+bool BetterAngleBackend::ghostMismatch() const {
+  static const int keys[] = {'W', 'A', 'S', 'D', VK_SPACE};
+  for (int vk : keys) {
+    bool phys = g_physicalKeys[vk].load(std::memory_order_relaxed);
+    bool tracked = (GetKeyState(vk) & 0x8000) != 0;
+    if (phys != tracked) return true; // THE GHOST IS PRESENT
+  }
+  return false;
+}
+
+QString BetterAngleBackend::rawWState() const {
+    bool rawW = (GetAsyncKeyState('W') & 0x8000) != 0;
+    return rawW ? "PRESSED" : "RELEASED";
+}
+
 QString BetterAngleBackend::inputLockStatus() const {
     bool isLocked = (GetTickCount64() < g_mouseSuspendedUntil.load());
     return isLocked ? "ACTIVE" : "IDLE";
 }
 
+QString BetterAngleBackend::nitroSyncLog() const {
+  return QString::fromStdString(g_nitroSyncLog);
+}
 
 void BetterAngleBackend::finishBooting() {
   if (g_hHUD) {
@@ -1103,43 +1111,4 @@ void BetterAngleBackend::setZero() {
   g_currentAngle = 0.0f;
   g_logic.SetZero();
   Beep(1000, 80);
-}
-
-static ULONGLONG FileTimeToInt64(const FILETIME& ft) {
-    return (((ULONGLONG)ft.dwHighDateTime) << 32) | ((ULONGLONG)ft.dwLowDateTime);
-}
-
-double BetterAngleBackend::cpuUsage() const {
-    static ULONGLONG lastSystemTime = 0;
-    static ULONGLONG lastProcessTime = 0;
-    static double lastCpu = 0.0;
-
-    FILETIME fCreation, fExit, fKernel, fUser;
-    FILETIME fSystemIdle, fSystemKernel, fSystemUser;
-
-    if (GetProcessTimes(GetCurrentProcess(), &fCreation, &fExit, &fKernel, &fUser) &&
-        GetSystemTimes(&fSystemIdle, &fSystemKernel, &fSystemUser)) {
-        
-        ULONGLONG sysTime = FileTimeToInt64(fSystemKernel) + FileTimeToInt64(fSystemUser);
-        ULONGLONG procTime = FileTimeToInt64(fKernel) + FileTimeToInt64(fUser);
-
-        if (lastSystemTime != 0) {
-            ULONGLONG sysDiff = sysTime - lastSystemTime;
-            ULONGLONG procDiff = procTime - lastProcessTime;
-            if (sysDiff > 0) {
-                lastCpu = (double)procDiff / (double)sysDiff * 100.0;
-            }
-        }
-        lastSystemTime = sysTime;
-        lastProcessTime = procTime;
-    }
-    return lastCpu;
-}
-
-double BetterAngleBackend::ramUsageMb() const {
-    PROCESS_MEMORY_COUNTERS pmc;
-    if (GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc))) {
-        return (double)pmc.WorkingSetSize / (1024.0 * 1024.0);
-    }
-    return 0.0;
 }

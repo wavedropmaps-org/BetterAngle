@@ -21,12 +21,36 @@ std::wstring GetProfilesPath();
 extern std::atomic<long long> g_detectionDelayMs;
 extern std::atomic<bool> g_showDebugOverlay;
 extern std::atomic<ULONGLONG> g_mouseSuspendedUntil;
+extern std::atomic<int>
+    g_lockTriggerReason; // 0=None,1=Glide?Dive,2=Dive?Glide,3=Alt-Tab
 extern std::atomic<int> g_scannerCpuPct;
 extern std::atomic<bool> g_physicalKeys[256];
 extern std::atomic<bool> g_running;
+extern std::string g_nitroSyncLog;
 extern int g_screenIndex;
 extern std::atomic<bool> g_fortniteFocusedCache;
+extern std::atomic<int> g_lockCount;
+extern std::atomic<DWORD> g_lockThreadId;
+extern std::atomic<long long> g_lockDurationMs;
+extern std::atomic<short> g_wPreLock;
+extern std::atomic<short> g_wPostUnlock;
+extern std::atomic<short> g_wPostFlush;
+extern std::atomic<bool> g_preState[4];
+extern std::atomic<bool> g_postState[4];
+extern std::atomic<bool> g_blockInputActive;
+extern std::atomic<bool> g_tableRefreshed;
+extern std::atomic<bool> g_hasSynced;
+extern std::atomic<int> g_activeFallback;
+extern std::atomic<bool> g_fb1Active;
+extern std::atomic<bool> g_rawKeyUpDetected[256];
+extern std::atomic<bool> g_rawKeyMakeDetected[256];
+extern std::atomic<bool> g_lockInProgress;
+extern std::atomic<bool> g_ghostFixInProgress;
+extern std::atomic<long long> g_ghostFixDurationMs;
+extern std::atomic<bool> g_ghostFixVerifyOk;
+extern std::mutex g_lockMutex;
 extern std::atomic<ULONGLONG> g_lastLockTime;
+extern std::mutex g_blockInputMutex;
 
 extern std::string g_lastVersionRun;
 
@@ -34,7 +58,7 @@ extern std::string g_lastVersionRun;
 #ifndef V_MAJ
 #define V_MAJ 5
 #define V_MIN 5
-#define V_PAT 244
+#define V_PAT 245
 #endif
 
 #define VERSION_STR APP_STR_Y(V_MAJ) "." APP_STR_Y(V_MIN) "." APP_STR_Y(V_PAT)
@@ -46,9 +70,6 @@ extern Profile g_currentProfile;
 extern std::vector<Profile> g_allProfiles;
 extern int g_selectedProfileIdx;
 extern std::wstring g_lastLoadedProfileName;
-
-extern HWND g_fortniteWindow;
-extern RECT g_fortniteRect;
 
 // HUD & Global Shared State
 enum SelectionState { NONE, SELECTING_ROI, SELECTING_COLOR };
@@ -89,7 +110,6 @@ extern RECT g_selectionRect;
 extern POINT g_startPoint;
 extern std::string g_latestVersionOnline;
 extern float g_currentAngle;
-extern std::atomic<int> g_hudDecimalPlaces; // 1 or 2 decimal places for angle HUD
 extern std::atomic<bool> g_isCursorVisible;
 extern AngleLogic g_logic;
 extern int g_hudX;
@@ -104,19 +124,6 @@ extern HWND g_hMsgWnd;
 bool RefreshHotkeys(HWND hWnd);
 extern std::atomic<bool> g_forceRedraw;
 extern std::atomic<bool> g_keybindAssignmentActive;
-extern std::atomic<bool> g_blockInputActive;
-extern std::atomic<bool> g_justRefocused;
-
-// Pre-spawned BlockInput worker ? eliminates ~5-20ms thread-creation latency
-// on FOV transitions. Detector signals g_lockEvent; worker wakes and locks input.
-extern HANDLE g_lockEvent;
-extern std::atomic<int> g_lockDurationMs;
-void StartBlockInputWorker();
-
-// Bumped on every WM_DISPLAYCHANGE so DetectorThread can invalidate its cached
-// monitor rect when virtual-desktop layout shifts (e.g. user hot-plugs a 2nd monitor).
-extern std::atomic<int> g_displayChangeGen;
-
 void NotifyBackendCrosshairChanged();
 void NotifyBackendUpdateStatusChanged();
 
