@@ -65,7 +65,7 @@ void FocusMonitorThread() {
       // ALT-TAB COOLDOWN: BlockInput locks the mouse at the OS level so
       // physical mouse movement during the focus switch can't affect
       // Fortnite's FOV. Uses same Shock & Restore pattern as glide/dive.
-      g_mouseSuspendedUntil = GetTickCount64() + 400;
+      g_mouseSuspendedUntil = GetTickCount64() + 200;
       g_lockTriggerReason = 3; // Alt-Tab Return
       g_lockCount++;
 
@@ -84,7 +84,7 @@ void FocusMonitorThread() {
           std::lock_guard<std::mutex> bLock(g_blockInputMutex);
           g_blockInputActive = true;
           BlockInput(TRUE);
-          Sleep(400);
+          Sleep(200);
           BlockInput(FALSE);
           g_blockInputActive = false;
         }
@@ -155,7 +155,7 @@ void DetectorThread() {
         if (nowDiving && !lastDiving &&
             (GetTickCount64() - g_lastLockTime > 500)) {
           g_lastLockTime = GetTickCount64();
-          g_mouseSuspendedUntil = GetTickCount64() + 700;
+          g_mouseSuspendedUntil = GetTickCount64() + 300;
 
           std::thread([]() {
             std::lock_guard<std::mutex> lock(g_lockMutex);
@@ -176,7 +176,7 @@ void DetectorThread() {
               std::lock_guard<std::mutex> lock(g_blockInputMutex);
               g_blockInputActive = true;
               BlockInput(TRUE);
-              Sleep(700);
+              Sleep(300);
               BlockInput(FALSE);
               g_blockInputActive = false;
             }
@@ -195,7 +195,7 @@ void DetectorThread() {
         else if (!nowDiving && lastDiving &&
                  (GetTickCount64() - g_lastLockTime > 500)) {
           g_lastLockTime = GetTickCount64();
-          g_mouseSuspendedUntil = GetTickCount64() + 1000;
+          g_mouseSuspendedUntil = GetTickCount64() + 300;
 
           std::thread([]() {
             std::lock_guard<std::mutex> lock(g_lockMutex);
@@ -216,7 +216,7 @@ void DetectorThread() {
               std::lock_guard<std::mutex> lock(g_blockInputMutex);
               g_blockInputActive = true;
               BlockInput(TRUE);
-              Sleep(1000);
+              Sleep(300);
               BlockInput(FALSE);
               g_blockInputActive = false;
             }
