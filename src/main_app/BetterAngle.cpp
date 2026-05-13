@@ -155,7 +155,7 @@ void DetectorThread() {
         if (nowDiving && !lastDiving &&
             (GetTickCount64() - g_lastLockTime > 500)) {
           g_lastLockTime = GetTickCount64();
-          g_mouseSuspendedUntil = GetTickCount64() + 300;
+          g_mouseSuspendedUntil = GetTickCount64() + 700;
 
           std::thread([]() {
             std::lock_guard<std::mutex> lock(g_lockMutex);
@@ -176,7 +176,7 @@ void DetectorThread() {
               std::lock_guard<std::mutex> lock(g_blockInputMutex);
               g_blockInputActive = true;
               BlockInput(TRUE);
-              Sleep(300);
+              Sleep(700);
               BlockInput(FALSE);
               g_blockInputActive = false;
             }
@@ -195,7 +195,7 @@ void DetectorThread() {
         else if (!nowDiving && lastDiving &&
                  (GetTickCount64() - g_lastLockTime > 500)) {
           g_lastLockTime = GetTickCount64();
-          g_mouseSuspendedUntil = GetTickCount64() + 300;
+          g_mouseSuspendedUntil = GetTickCount64() + 700;
 
           std::thread([]() {
             std::lock_guard<std::mutex> lock(g_lockMutex);
@@ -216,7 +216,7 @@ void DetectorThread() {
               std::lock_guard<std::mutex> lock(g_blockInputMutex);
               g_blockInputActive = true;
               BlockInput(TRUE);
-              Sleep(300);
+              Sleep(700);
               BlockInput(FALSE);
               g_blockInputActive = false;
             }
