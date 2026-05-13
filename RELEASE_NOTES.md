@@ -1,3 +1,6 @@
+### BetterAngle Pro v5.5.234
+- Automated build release.
+
 ### BetterAngle Pro v5.5.233
 - **Legacy Baseline Restoration**: Reverted the codebase to the state of version 5.5.160. This is a pre-AVX2 version that uses the standard scalar scanner. Note: This version does not include recent fixes for keyboard ghosting or thread-affinity input locks.
 
