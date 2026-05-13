@@ -222,9 +222,6 @@ std::atomic<bool> g_blockInputActive(false);
 std::atomic<bool> g_justRefocused(false);
 HANDLE g_lockEvent = NULL;
 std::atomic<int> g_lockDurationMs(0);
-std::atomic<int> g_displayChangeGen(0);
-std::atomic<bool> g_lastScanUsedDxgi(false);
-std::atomic<int>  g_lastPickSource(0);
 
 RECT GetMonitorRectByIndex(int index) {
   struct RectData {

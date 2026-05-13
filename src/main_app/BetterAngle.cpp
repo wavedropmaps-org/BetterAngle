@@ -4,7 +4,6 @@
 #include <dwmapi.h>
 #include <fstream>
 #include <gdiplus.h>
-#include <immintrin.h>
 #include <iostream>
 #include <shlobj.h>
 #include <string>
@@ -125,7 +124,6 @@ void DetectorThread() {
   float lastSensX = -1.0f;
   RECT cachedMonitorRect = {};
   int cachedScreenIdx = -1;
-  int cachedDisplayGen = -1;
 
   timeBeginPeriod(1);
   while (g_running) {
@@ -143,15 +141,9 @@ void DetectorThread() {
 
       // Only scan ROI when Fortnite is the foreground window
       if (currentFortniteFocused) {
-        int curDisplayGen = g_displayChangeGen.load();
-        if (g_screenIndex != cachedScreenIdx || curDisplayGen != cachedDisplayGen) {
+        if (g_screenIndex != cachedScreenIdx) {
           cachedMonitorRect = GetMonitorRectByIndex(g_screenIndex);
-          // Re-init DXGI duplication for the (possibly new) monitor. Done
-          // here on the detector thread to avoid races with the running scan
-          // and with SamplePixelDXGI calls from the colour picker.
-          g_detector.ReinitDisplay(g_screenIndex);
           cachedScreenIdx = g_screenIndex;
-          cachedDisplayGen = curDisplayGen;
         }
         RECT mRect = cachedMonitorRect;
         RoiConfig cfg = {
@@ -168,20 +160,16 @@ void DetectorThread() {
 
         // -1 means no new frame was available (DXGI timeout) — skip this cycle
         // entirely to avoid false edge detection from a stale matchCount of 0.
-        // Spin instead of Sleep(1) so we react to the next frame the instant
-        // it arrives (the prior 1ms nap was the dominant latency source).
         if (scanResult < 0) {
-          _mm_pause();
+          Sleep(1);
           continue;
         }
 
         g_matchCount = scanResult;
 
-        // Scanner CPU %: with spin-wait the loop pegs one core when active.
-        // The old formula assumed a ~1ms cycle with Sleep(1) and read 0% in
-        // spin mode (scanMs is sub-ms / below GetTickCount64 resolution).
-        // Hard-coded binary metric: 100 when actively scanning, 0 otherwise.
-        g_scannerCpuPct = 100;
+        // Scanner CPU %: time spent scanning vs total loop period
+        int cpuPct = (scanMs > 0) ? (int)((scanMs * 100) / (scanMs + 10)) : 0;
+        g_scannerCpuPct = cpuPct;
 
         // Peak match tracking (2s decay window)
         int currentMatch = g_matchCount.load();
@@ -240,13 +228,7 @@ void DetectorThread() {
       g_isDiving = nowDiving;
       g_logic.SetDivingState(nowDiving);
     }
-    // Spin (peg one core) only while actively scanning; otherwise idle politely.
-    // _mm_pause is a CPU hint that yields hyperthread cycles during a spin loop.
-    if (g_fortniteFocusedCache.load() && g_currentSelection == NONE) {
-      _mm_pause();
-    } else {
-      Sleep(10);
-    }
+    Sleep(1); // CPU Fix: Drops usage from 100% to ~1%
   }
   timeEndPeriod(1);
 }
@@ -412,29 +394,14 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
 
         POINT cur;
         GetCursorPos(&cur);
-        COLORREF bitBltPixel = GetPixel(hdcMem, cur.x - sx, cur.y - sy);
+        COLORREF pixel = GetPixel(hdcMem, cur.x - sx, cur.y - sy);
 
+        g_pickedColor = pixel;
+        g_targetColor = pixel;
         SelectObject(hdcMem, hOld);
         DeleteDC(hdcMem);
         ReleaseDC(NULL, hdcScreen);
-
-        // Try a one-shot DXGI sample at the same screen-space pixel. The
-        // scanner reads DXGI bytes — saving the DXGI-sampled value as
-        // target_color avoids the GDI/DXGI byte drift that otherwise
-        // prevents matches. Falls back to the BitBlt sample on failure.
-        RECT mRect = GetMonitorRectByIndex(g_screenIndex);
-        int monX = cur.x - mRect.left;
-        int monY = cur.y - mRect.top;
-        COLORREF dxgiPixel = 0;
-        bool gotDxgi = g_detector.SamplePixelDXGI(monX, monY, dxgiPixel);
-
-        COLORREF chosen = gotDxgi ? dxgiPixel : bitBltPixel;
-        g_pickedColor = chosen;
-        g_targetColor = chosen;
-        g_lastPickSource = gotDxgi ? 1 : 2;
-        LOG_INFO("Color picked: source=%s rgb=(%d,%d,%d)",
-                 gotDxgi ? "DXGI" : "BitBlt-fallback",
-                 GetRValue(chosen), GetGValue(chosen), GetBValue(chosen));
+        LOG_TRACE("Color sampled successfully.");
       }
 
       // Finalize and Exit Selection
@@ -656,28 +623,6 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
   }
 
   case WM_DISPLAYCHANGE: {
-    // Bump generation so DetectorThread re-resolves its cached monitor rect.
-    g_displayChangeGen.fetch_add(1);
-
-    // Auto-track Fortnite's monitor: hot-plugging a 2nd monitor can renumber
-    // monitor indices (Windows enumerates by virtual-desktop position). If
-    // Fortnite is still on the original physical screen, find its new index
-    // and update g_screenIndex so the scanner reads the correct slice.
-    if (g_fortniteWindow && IsWindow(g_fortniteWindow)) {
-      HMONITOR hFnMon = MonitorFromWindow(g_fortniteWindow, MONITOR_DEFAULTTONEAREST);
-      struct FindData { HMONITOR target; int currentIndex; int foundIndex; };
-      FindData data = {hFnMon, 0, -1};
-      EnumDisplayMonitors(NULL, NULL,
-        [](HMONITOR h, HDC, LPRECT, LPARAM dwData) -> BOOL {
-          auto *d = reinterpret_cast<FindData *>(dwData);
-          if (h == d->target) { d->foundIndex = d->currentIndex; return FALSE; }
-          d->currentIndex++;
-          return TRUE;
-        },
-        reinterpret_cast<LPARAM>(&data));
-      if (data.foundIndex >= 0) g_screenIndex = data.foundIndex;
-    }
-
     RECT mRect = GetMonitorRectByIndex(g_screenIndex);
     int screenW = mRect.right - mRect.left;
     int screenH = mRect.bottom - mRect.top;

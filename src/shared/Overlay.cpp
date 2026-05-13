@@ -161,14 +161,7 @@ void DrawOverlay(HWND hwnd, double angle, bool showCrosshair) {
   if (g_screenSnapshot && g_currentSelection != NONE) {
     HDC hdcSnap = CreateCompatibleDC(hdcMem);
     HGDIOBJ hOldSnap = SelectObject(hdcSnap, g_screenSnapshot);
-    // The snapshot is the FULL virtual desktop. Blit the slice corresponding
-    // to the configured monitor — without this offset, secondary monitors
-    // would render the primary monitor's content (Discord/browser etc.).
-    RECT mRect = GetMonitorRectByIndex(g_screenIndex);
-    int virX = GetSystemMetrics(SM_XVIRTUALSCREEN);
-    int virY = GetSystemMetrics(SM_YVIRTUALSCREEN);
-    BitBlt(hdcMem, 0, 0, sw, sh, hdcSnap,
-           mRect.left - virX, mRect.top - virY, SRCCOPY);
+    BitBlt(hdcMem, 0, 0, sw, sh, hdcSnap, 0, 0, SRCCOPY);
     SelectObject(hdcSnap, hOldSnap);
     DeleteDC(hdcSnap);
 
@@ -571,24 +564,6 @@ void DrawOverlay(HWND hwnd, double angle, bool showCrosshair) {
               g_scannerCpuPct.load() < 50);
 
       DrawRow(7, 1, L"Version:", L"v" + std::wstring(VERSION_WSTR), true);
-
-      // Capture-path diagnostics (added v5.5.157). Helps verify DXGI is
-      // actually active and the picker stored the right byte.
-      bool dxgiActive = g_lastScanUsedDxgi.load();
-      DrawRow(0, 1, L"Capture Path:",
-              dxgiActive ? L"DXGI" : L"BitBlt", dxgiActive);
-
-      int pickSrc = g_lastPickSource.load();
-      const wchar_t *pickStr = (pickSrc == 1) ? L"DXGI"
-                              : (pickSrc == 2) ? L"BitBlt"
-                                               : L"-";
-      DrawRow(1, 1, L"Pick Source:", pickStr, pickSrc == 1);
-
-      COLORREF pc = g_pickedColor;
-      std::wstring rgbStr = L"(" + std::to_wstring(GetRValue(pc)) + L"," +
-                            std::to_wstring(GetGValue(pc)) + L"," +
-                            std::to_wstring(GetBValue(pc)) + L")";
-      DrawRow(2, 1, L"Picked RGB:", rgbStr);
     }
   }
 

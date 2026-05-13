@@ -198,11 +198,8 @@ void BetterAngleBackend::setScreenIndex(int v) {
     g_forceRedraw = true;
   }
 
-  // Don't call ReinitDisplay here — DXGI re-init must happen on the detector
-  // thread to avoid races with in-flight Scan / SamplePixelDXGI. Bumping the
-  // generation counter signals the detector thread to do the re-init on its
-  // next iteration.
-  g_displayChangeGen.fetch_add(1);
+  // Reinit DXGI desktop duplication on the correct monitor
+  g_detector.ReinitDisplay(v);
 
   emit profileChanged();
 }
