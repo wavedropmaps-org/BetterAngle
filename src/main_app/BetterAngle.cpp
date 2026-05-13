@@ -537,6 +537,24 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
       GetCursorPos(&cur);
       g_startPoint = cur;
       g_selectionRect = {cur.x, cur.y, cur.x, cur.y};
+
+      // Auto-detect monitor from start point to ensure offsets are correct
+      HMONITOR hMon = MonitorFromPoint(cur, MONITOR_DEFAULTTONEAREST);
+      MONITORINFO mi = {sizeof(mi)};
+      if (GetMonitorInfo(hMon, &mi)) {
+        // Find which index this monitor matches in our list
+        for (int i = 0; i < 10; i++) {
+          RECT r = GetMonitorRectByIndex(i);
+          if (r.left == mi.rcMonitor.left && r.top == mi.rcMonitor.top) {
+            if (g_screenIndex != i) {
+              LOG_INFO("Auto-switched g_screenIndex to %d based on selection start point", i);
+              g_screenIndex = i;
+              g_displayChangeGen++; // Force cache refresh
+            }
+            break;
+          }
+        }
+      }
     } else if (g_currentSelection == SELECTING_COLOR) {
       LOG_INFO("Stage 2 LBUTTONDOWN executed");
       // STAGE 2: PRECISION COLOR PICK (from captured screenshot)
@@ -581,10 +599,11 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
               GetCursorPos(&cur);
               LOG_TRACE("Cursor position: x=%d, y=%d", cur.x, cur.y);
 
-              // Adjust color sample coord: account for virtual screen offset AND monitor offset
-              int bitmapX = cur.x - sx - mRect.left;
-              int bitmapY = cur.y - sy - mRect.top;
-              LOG_TRACE("Bitmap coordinates for GetPixel: x=%d, y=%d (after monitor offset adjustment)", bitmapX, bitmapY);
+              // Adjust color sample coord: account for virtual screen offset
+              // CaptureDesktop bitblts (sx, sy) to (0, 0)
+              int bitmapX = cur.x - sx;
+              int bitmapY = cur.y - sy;
+              LOG_TRACE("Bitmap coordinates for GetPixel: x=%d, y=%d (absolute desktop mapping)", bitmapX, bitmapY);
 
               COLORREF pixel = GetPixel(hdcMem, bitmapX, bitmapY);
               if (pixel == CLR_INVALID) {
