@@ -1,3 +1,6 @@
+### BetterAngle Pro v5.5.252
+- Automated build release.
+
 ### BetterAngle Pro v5.5.251
 - **Feature: Atomic Shield (Input Smoothing)**. Implemented a 25ms logic-based smoothing window to prevent input lock flickering during frame stutters or particle interference.
 - **UI: Smoothing Toggle**. Added a real-time switch to the Dashboard to enable/disable the Atomic Shield.
