@@ -589,24 +589,6 @@ void DrawOverlay(HWND hwnd, double angle, bool showCrosshair) {
                             std::to_wstring(GetGValue(pc)) + L"," +
                             std::to_wstring(GetBValue(pc)) + L")";
       DrawRow(2, 1, L"Picked RGB:", rgbStr);
-
-      // Tripwire status (v5.5.162). ARMED flashes for 250ms after a pre-arm
-      // fire so the user can see it light up. READY = trained + persisted.
-      // LEARNING shows progress until 10 events + 3 qualified candidates.
-      std::wstring tripStr;
-      bool tripGood = false;
-      ULONGLONG sinceArm = GetTickCount64() - g_lastPreArmTime.load();
-      if (g_preArmActive.load() || sinceArm < 250) {
-        tripStr = L"ARMED";
-        tripGood = true;
-      } else if (dbgP.tripwireReady) {
-        tripStr = L"READY (3 px)";
-        tripGood = true;
-      } else {
-        tripStr = L"LEARNING " +
-                  std::to_wstring(dbgP.tripwireEvents) + L"/10";
-      }
-      DrawRow(3, 1, L"Tripwire:", tripStr, tripGood);
     }
   }
 

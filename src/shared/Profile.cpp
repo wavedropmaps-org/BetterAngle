@@ -184,51 +184,6 @@ bool Profile::Load(const std::wstring &path) {
     crosshairPresets.push_back(def);
   }
 
-  // Tripwire (v5.5.162). Absent in legacy profiles → start fresh learning.
-  tripwireCandidates.clear();
-  tripwireEvents = 0;
-  tripwireReady = false;
-  tripwireActiveIdx[0] = tripwireActiveIdx[1] = tripwireActiveIdx[2] = -1;
-
-  if (content.find("\"tripwireEvents\"") != std::string::npos) {
-    tripwireEvents = (int)extractDouble("tripwireEvents");
-    tripwireReady = extractDouble("tripwireReady") > 0.5;
-    tripwireActiveIdx[0] = (int)extractDouble("tripwireActive0");
-    tripwireActiveIdx[1] = (int)extractDouble("tripwireActive1");
-    tripwireActiveIdx[2] = (int)extractDouble("tripwireActive2");
-    tripwireSavedRoiX = (int)extractDouble("tripwireSavedRoiX");
-    tripwireSavedRoiY = (int)extractDouble("tripwireSavedRoiY");
-    tripwireSavedRoiW = (int)extractDouble("tripwireSavedRoiW");
-    tripwireSavedRoiH = (int)extractDouble("tripwireSavedRoiH");
-    tripwireSavedColor = (COLORREF)extractDouble("tripwireSavedColor");
-    tripwireSavedTolerance = (int)extractDouble("tripwireSavedTolerance");
-
-    size_t arrStart = content.find("\"tripwireCandidates\": [");
-    if (arrStart != std::string::npos) {
-      size_t arrEnd = content.find("]", arrStart);
-      std::string arrStr = content.substr(arrStart, arrEnd - arrStart);
-      size_t op = 0;
-      while ((op = arrStr.find("{", op)) != std::string::npos) {
-        size_t oe = arrStr.find("}", op);
-        if (oe == std::string::npos) break;
-        std::string obj = arrStr.substr(op, oe - op);
-        auto exI = [&](std::string k) -> int {
-          size_t p = obj.find("\"" + k + "\": ");
-          if (p == std::string::npos) return 0;
-          return (int)std::atof(obj.substr(p + k.length() + 3).c_str());
-        };
-        TripwireSample s;
-        s.x = exI("x");
-        s.y = exI("y");
-        s.hits = exI("h");
-        s.noise = exI("n");
-        s.idleSamples = exI("i");
-        tripwireCandidates.push_back(s);
-        op = oe + 1;
-      }
-    }
-  }
-
   return true;
 }
 
@@ -298,29 +253,6 @@ bool Profile::Save(const std::wstring &path) {
        << "}";
     if (i < crosshairPresets.size() - 1)
       ss << ",";
-    ss << "\n";
-  }
-  ss << "  ],\n";
-
-  // Tripwire (v5.5.162)
-  ss << "  \"tripwireEvents\": " << tripwireEvents << ",\n";
-  ss << "  \"tripwireReady\": " << (tripwireReady ? 1 : 0) << ",\n";
-  ss << "  \"tripwireActive0\": " << tripwireActiveIdx[0] << ",\n";
-  ss << "  \"tripwireActive1\": " << tripwireActiveIdx[1] << ",\n";
-  ss << "  \"tripwireActive2\": " << tripwireActiveIdx[2] << ",\n";
-  ss << "  \"tripwireSavedRoiX\": " << tripwireSavedRoiX << ",\n";
-  ss << "  \"tripwireSavedRoiY\": " << tripwireSavedRoiY << ",\n";
-  ss << "  \"tripwireSavedRoiW\": " << tripwireSavedRoiW << ",\n";
-  ss << "  \"tripwireSavedRoiH\": " << tripwireSavedRoiH << ",\n";
-  ss << "  \"tripwireSavedColor\": " << (unsigned long)tripwireSavedColor << ",\n";
-  ss << "  \"tripwireSavedTolerance\": " << tripwireSavedTolerance << ",\n";
-  ss << "  \"tripwireCandidates\": [\n";
-  for (size_t i = 0; i < tripwireCandidates.size(); i++) {
-    const auto &c = tripwireCandidates[i];
-    ss << "    {\"x\": " << c.x << ", \"y\": " << c.y
-       << ", \"h\": " << c.hits << ", \"n\": " << c.noise
-       << ", \"i\": " << c.idleSamples << "}";
-    if (i < tripwireCandidates.size() - 1) ss << ",";
     ss << "\n";
   }
   ss << "  ]\n";

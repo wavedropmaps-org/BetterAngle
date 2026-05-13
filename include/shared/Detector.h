@@ -17,16 +17,7 @@ class FovDetector {
 public:
   FovDetector();
   ~FovDetector();
-  // outGridSamples (optional, length 9): 3x3 grid of cell-centre BGRA pixels
-  // sampled inside the ROI. Used by the tripwire learner. If null, skipped.
-  // tripwireActiveIdx: if non-null, checks if all 3 pixels (at these indices)
-  // match target colour; if so, returns -1000 (skip AVX2, pre-arm fires early).
-  // outFrameTime (optional): filled with DXGI LastPresentTime if DXGI path succeeds;
-  // set to {0} if BitBlt fallback. Used for retroactive angle correction.
-  int Scan(const RoiConfig &cfg, DWORD *outGridSamples = nullptr,
-           const int *tripwireActiveIdx = nullptr, bool tripwireReady = false,
-           LARGE_INTEGER *outFrameTime = nullptr,
-           int earlyExitThreshold = 0);
+  int Scan(const RoiConfig &cfg);
 
   // Reinit the DXGI duplication for the given monitor index. Strict — if the
   // monitor's output isn't reachable from this adapter, m_dxgiOk stays false
@@ -41,13 +32,6 @@ public:
   // caller should fall back to BitBlt.
   bool SamplePixelDXGI(int monX, int monY, COLORREF &outColor);
 
-  // Sub-frame tripwire check via GetPixel(). Samples the 3 pixels at
-  // tripwireActiveIdx positions using GDI. Returns true if all 3 match target
-  // colour within tolerance. Called between DXGI frames to detect mid-frame FOV changes.
-  bool CheckTripwireGDI(const RoiConfig &cfg,
-                        const int *tripwireActiveIdx,
-                        COLORREF target, int tolerance);
-
 private:
   // DXGI path
   ID3D11Device           *m_d3dDevice   = nullptr;
@@ -56,10 +40,6 @@ private:
   ID3D11Texture2D        *m_stagingTex  = nullptr;
   int  m_stagingW = 0, m_stagingH = 0;
   bool m_dxgiOk   = false;
-
-  // 3×1 staging texture for Phase 1 tripwire check (holds exactly 3 pixels).
-  // Allocated once after DXGI init; released in ReleaseDXGI().
-  ID3D11Texture2D *m_tripwireStagingTex = nullptr;
 
   // BitBlt fallback path
   HDC     m_hdcScreen = NULL;
@@ -72,10 +52,7 @@ private:
   void ReleaseDXGI();
   void EnsureScreenDC();
   void EnsureResources(int w, int h);
-  int  ScanBitBlt(const RoiConfig &cfg, DWORD *outGridSamples = nullptr,
-                  const int *tripwireActiveIdx = nullptr, bool tripwireReady = false,
-                  LARGE_INTEGER *outFrameTime = nullptr,
-                  int earlyExitThreshold = 0);
+  int  ScanBitBlt(const RoiConfig &cfg);
 };
 
 #endif // DETECTOR_H

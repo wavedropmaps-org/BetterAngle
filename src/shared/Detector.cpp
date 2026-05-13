@@ -3,12 +3,11 @@
 #include <algorithm>
 #include <atomic>
 #include <immintrin.h>
-#include <intrin.h>
 
 #pragma comment(lib, "dxgi.lib")
 #pragma comment(lib, "d3d11.lib")
 
-// ---------- pixel matching: scalar (L2) and AVX2 (L1, per-pair) ------------
+// ---------- shared pixel matching ------------------------------------------
 
 #define PIX_MATCH_INT(pix)                      \
   {                                             \
@@ -20,10 +19,8 @@
       match++;                                  \
   }
 
-// Scalar fallback: original L2 distance. Used on pre-Haswell CPUs (no AVX2).
-static int CountMatchesScalar(const DWORD *p, int total,
-                              int tr, int tg, int tb, int tolerance) {
-  int tolSq = tolerance * tolerance;
+static int CountMatches(const DWORD *p, int total,
+                        int tr, int tg, int tb, int tolSq) {
   int match = 0, i = 0;
   for (; i <= total - 4; i += 4, p += 4) {
     DWORD p0=p[0], p1=p[1], p2=p[2], p3=p[3];
@@ -32,79 +29,6 @@ static int CountMatchesScalar(const DWORD *p, int total,
   }
   for (; i < total; i++, p++) { DWORD pix = *p; PIX_MATCH_INT(pix); }
   return match;
-}
-
-// AVX2 fast path: L1 distance via _mm256_sad_epu8.
-//
-// SAD groups 8 bytes per sum, and each BGRA pixel is 4 bytes — so each SAD
-// lane covers 2 pixels' combined channel-diff sum (alpha masked to 0 in both
-// operands). We compare each 2-pixel sum against 2*L1tol and count 2 matches
-// per matching lane. This is per-PAIR granularity, slightly more permissive
-// than per-pixel L2 — for a solid-coloured FOV indicator this matches the
-// scalar version's behaviour to within ~5% on edge pixels (well inside the
-// user's diveGlideMatch percentage threshold's slack).
-//
-// L1tol = tolerance * sqrt(3) keeps the L1 ball comparable in size to the
-// scalar L2 ball (containment) so calibrated colours don't need re-pick.
-static int CountMatchesAvx2(const DWORD *p, int total,
-                            int tr, int tg, int tb, int tolerance) {
-  const int L1tol  = (int)((float)tolerance * 1.7320508f); // sqrt(3)
-  const int L1tol2 = L1tol * 2;                            // pair threshold
-
-  // Target with alpha=0; pixels will be masked to alpha=0 too so SAD's alpha
-  // contribution is |0-0|=0.
-  const DWORD targetDword = ((DWORD)tr << 16) | ((DWORD)tg << 8) | (DWORD)tb;
-  const __m256i target_v   = _mm256_set1_epi32((int)targetDword);
-  const __m256i alpha_mask = _mm256_set1_epi32(0x00FFFFFF);
-  const __m256i tol2_v     = _mm256_set1_epi64x((long long)L1tol2);
-
-  int match = 0, i = 0;
-  for (; i <= total - 8; i += 8, p += 8) {
-    __m256i pixels     = _mm256_loadu_si256((const __m256i *)p);
-    __m256i pix_masked = _mm256_and_si256(pixels, alpha_mask);
-    // 4 lanes of u16 sums; each lane = sum of |dB|+|dG|+|dR| for 2 pixels.
-    __m256i sad        = _mm256_sad_epu8(pix_masked, target_v);
-    // gt[lane] = -1 if sad > L1tol2 (no match), 0 otherwise (match).
-    __m256i gt         = _mm256_cmpgt_epi64(sad, tol2_v);
-    // Each 64-bit lane is all-1s or all-0s; movemask gives 8 mask bits per lane.
-    int mask32 = _mm256_movemask_epi8(gt);
-    int noMatchLanes = (int)__popcnt((unsigned int)mask32) / 8;
-    int matchLanes   = 4 - noMatchLanes;
-    match += matchLanes * 2; // 2 pixels per lane
-  }
-  // Remainder: scalar with single-pixel L1 threshold for consistency.
-  for (; i < total; i++, p++) {
-    DWORD pix = *p;
-    int r = (int)((pix >> 16) & 0xFF);
-    int g = (int)((pix >> 8) & 0xFF);
-    int b = (int)(pix & 0xFF);
-    int dr = (r > tr) ? r - tr : tr - r;
-    int dg = (g > tg) ? g - tg : tg - g;
-    int db = (b > tb) ? b - tb : tb - b;
-    if (dr + dg + db <= L1tol) match++;
-  }
-  return match;
-}
-
-// CPUID-based AVX2 detection. Run once at first use.
-static bool DetectAvx2() {
-  int info[4];
-  __cpuidex(info, 7, 0);
-  return (info[1] & (1 << 5)) != 0; // EBX bit 5 = AVX2
-}
-
-// Initialised on first call (thread-safe under C++11 magic statics).
-static bool HasAvx2() {
-  static const bool s = DetectAvx2();
-  return s;
-}
-
-// Dispatcher kept under the original name so callers don't change.
-static int CountMatches(const DWORD *p, int total,
-                        int tr, int tg, int tb, int tolerance) {
-  return HasAvx2()
-    ? CountMatchesAvx2(p, total, tr, tg, tb, tolerance)
-    : CountMatchesScalar(p, total, tr, tg, tb, tolerance);
 }
 
 // Resolve a monitor index (in EnumDisplayMonitors order) to its HMONITOR.
@@ -140,7 +64,6 @@ FovDetector::~FovDetector() {
 // ---------- DXGI init / teardown -------------------------------------------
 
 void FovDetector::ReleaseDXGI() {
-  if (m_tripwireStagingTex) { m_tripwireStagingTex->Release(); m_tripwireStagingTex = nullptr; }
   if (m_stagingTex)  { m_stagingTex->Release();  m_stagingTex  = nullptr; }
   if (m_duplication) { m_duplication->Release(); m_duplication = nullptr; }
   if (m_d3dCtx)      { m_d3dCtx->Release();      m_d3dCtx      = nullptr; }
@@ -203,10 +126,7 @@ void FovDetector::ReinitDisplay(int monitorIndex) {
 
 // ---------- main scan ------------------------------------------------------
 
-int FovDetector::Scan(const RoiConfig &cfg, DWORD *outGridSamples,
-                      const int *tripwireActiveIdx, bool tripwireReady,
-                      LARGE_INTEGER *outFrameTime,
-                      int earlyExitThreshold) {
+int FovDetector::Scan(const RoiConfig &cfg) {
   if (cfg.w <= 0 || cfg.h <= 0) return 0;
 
   if (m_dxgiOk) {
@@ -214,8 +134,6 @@ int FovDetector::Scan(const RoiConfig &cfg, DWORD *outGridSamples,
     DXGI_OUTDUPL_FRAME_INFO fi{};
     IDXGIResource *res = nullptr;
     HRESULT hr = m_duplication->AcquireNextFrame(0, &fi, &res);
-
-    if (outFrameTime) *outFrameTime = fi.LastPresentTime;
 
     if (hr == DXGI_ERROR_WAIT_TIMEOUT) {
       // Bounded pause burst: caps the AcquireNextFrame poll rate at ~1M/s so
@@ -230,7 +148,7 @@ int FovDetector::Scan(const RoiConfig &cfg, DWORD *outGridSamples,
       // Device lost, mode change, or other failure. Don't recreate here
       // (that would race a concurrent SamplePixelDXGI call on main thread).
       // The next display change / screen-index change will trigger ReinitDisplay.
-      return ScanBitBlt(cfg, outGridSamples, tripwireActiveIdx, tripwireReady, outFrameTime, earlyExitThreshold);
+      return ScanBitBlt(cfg);
     }
 
     ID3D11Texture2D *desktopTex = nullptr;
@@ -238,7 +156,7 @@ int FovDetector::Scan(const RoiConfig &cfg, DWORD *outGridSamples,
     res->Release();
     if (!desktopTex) {
       m_duplication->ReleaseFrame();
-      return ScanBitBlt(cfg, outGridSamples, tripwireActiveIdx, tripwireReady, outFrameTime, earlyExitThreshold);
+      return ScanBitBlt(cfg);
     }
 
     D3D11_TEXTURE2D_DESC desc;
@@ -249,7 +167,7 @@ int FovDetector::Scan(const RoiConfig &cfg, DWORD *outGridSamples,
         desc.Format != DXGI_FORMAT_B8G8R8A8_UNORM_SRGB) {
       desktopTex->Release();
       m_duplication->ReleaseFrame();
-      return ScanBitBlt(cfg, outGridSamples, tripwireActiveIdx, tripwireReady, outFrameTime, earlyExitThreshold);
+      return ScanBitBlt(cfg);
     }
 
     // ROI must lie within the monitor texture (cfg.x/y are monitor-relative).
@@ -258,7 +176,7 @@ int FovDetector::Scan(const RoiConfig &cfg, DWORD *outGridSamples,
         (UINT)(cfg.y + cfg.h) > desc.Height) {
       desktopTex->Release();
       m_duplication->ReleaseFrame();
-      return ScanBitBlt(cfg, outGridSamples, tripwireActiveIdx, tripwireReady, outFrameTime, earlyExitThreshold);
+      return ScanBitBlt(cfg);
     }
 
     if (!m_stagingTex || m_stagingW != cfg.w || m_stagingH != cfg.h) {
@@ -277,64 +195,6 @@ int FovDetector::Scan(const RoiConfig &cfg, DWORD *outGridSamples,
       m_stagingH = cfg.h;
     }
 
-    // Phase 1 (v5.5.178): copy only the 3 trained tripwire pixels into a 3×1
-    // staging texture. Map stall is ~1-5µs vs ~50-200µs for the full ROI.
-    // If 2-of-3 match → skip the full ROI copy entirely and fire immediately.
-    // Falls through to the full copy when tripwire isn't ready, allocation
-    // fails, or the fast check doesn't match.
-    if (tripwireReady && tripwireActiveIdx &&
-        tripwireActiveIdx[0] >= 0 && tripwireActiveIdx[1] >= 0 && tripwireActiveIdx[2] >= 0) {
-      if (!m_tripwireStagingTex) {
-        D3D11_TEXTURE2D_DESC sd{};
-        sd.Width            = 3;
-        sd.Height           = 1;
-        sd.MipLevels        = 1;
-        sd.ArraySize        = 1;
-        sd.Format           = DXGI_FORMAT_B8G8R8A8_UNORM;
-        sd.SampleDesc.Count = 1;
-        sd.Usage            = D3D11_USAGE_STAGING;
-        sd.CPUAccessFlags   = D3D11_CPU_ACCESS_READ;
-        m_d3dDevice->CreateTexture2D(&sd, nullptr, &m_tripwireStagingTex);
-      }
-      if (m_tripwireStagingTex) {
-        for (int k = 0; k < 3; k++) {
-          int idx = tripwireActiveIdx[k];
-          int gx = idx % 3, gy = idx / 3;
-          int px = (cfg.w * (gx * 2 + 1)) / 6;
-          int py = (cfg.h * (gy * 2 + 1)) / 6;
-          if (px < 0) px = 0; else if (px >= cfg.w) px = cfg.w - 1;
-          if (py < 0) py = 0; else if (py >= cfg.h) py = cfg.h - 1;
-          D3D11_BOX pixBox{ (UINT)(cfg.x + px), (UINT)(cfg.y + py), 0,
-                            (UINT)(cfg.x + px + 1), (UINT)(cfg.y + py + 1), 1 };
-          m_d3dCtx->CopySubresourceRegion(m_tripwireStagingTex, 0,
-                                           k, 0, 0, desktopTex, 0, &pixBox);
-        }
-        D3D11_MAPPED_SUBRESOURCE tmap{};
-        if (SUCCEEDED(m_d3dCtx->Map(m_tripwireStagingTex, 0, D3D11_MAP_READ, 0, &tmap))) {
-          const DWORD *tp = static_cast<const DWORD *>(tmap.pData);
-          int tr2 = (int)GetRValue(cfg.target);
-          int tg2 = (int)GetGValue(cfg.target);
-          int tb2 = (int)GetBValue(cfg.target);
-          int tolSq2 = cfg.tolerance * cfg.tolerance;
-          int matchCount = 0;
-          for (int k = 0; k < 3; k++) {
-            DWORD pix = tp[k] & 0x00FFFFFF;
-            int r = (int)((pix >> 16) & 0xFF);
-            int g = (int)((pix >> 8)  & 0xFF);
-            int b = (int)(pix & 0xFF);
-            int dr = r - tr2, dg = g - tg2, db = b - tb2;
-            if ((dr*dr + dg*dg + db*db) <= tolSq2) matchCount++;
-          }
-          m_d3dCtx->Unmap(m_tripwireStagingTex, 0);
-          if (matchCount >= 2) {
-            desktopTex->Release();
-            m_duplication->ReleaseFrame();
-            return -1000;
-          }
-        }
-      }
-    }
-
     // Per-output texture is monitor-sized. cfg.x/y are already monitor-relative
     // — DO NOT add monitorOffset here (that's only valid for the BitBlt path
     // which goes through GetDC(NULL) = virtual-desktop coordinate space).
@@ -347,71 +207,25 @@ int FovDetector::Scan(const RoiConfig &cfg, DWORD *outGridSamples,
 
     D3D11_MAPPED_SUBRESOURCE mapped{};
     hr = m_d3dCtx->Map(m_stagingTex, 0, D3D11_MAP_READ, 0, &mapped);
-    if (FAILED(hr)) return ScanBitBlt(cfg, outGridSamples, tripwireActiveIdx, tripwireReady, outFrameTime, earlyExitThreshold);
+    if (FAILED(hr)) return ScanBitBlt(cfg);
 
+    int tolSq = cfg.tolerance * cfg.tolerance;
     int tr = (int)GetRValue(cfg.target);
     int tg = (int)GetGValue(cfg.target);
     int tb = (int)GetBValue(cfg.target);
-
-    // Tripwire grid samples (cell centres of a 3x3 grid). ~9 DWORD reads, ~50ns total.
-    if (outGridSamples) {
-      for (int gy = 0; gy < 3; gy++) {
-        int sy = (cfg.h * (gy * 2 + 1)) / 6;
-        if (sy < 0) sy = 0; else if (sy >= cfg.h) sy = cfg.h - 1;
-        const DWORD *rowPtr = reinterpret_cast<const DWORD *>(
-            static_cast<const BYTE *>(mapped.pData) + sy * mapped.RowPitch);
-        for (int gx = 0; gx < 3; gx++) {
-          int sx = (cfg.w * (gx * 2 + 1)) / 6;
-          if (sx < 0) sx = 0; else if (sx >= cfg.w) sx = cfg.w - 1;
-          outGridSamples[gy * 3 + gx] = rowPtr[sx] & 0x00FFFFFF;
-        }
-      }
-    }
-
-    // Option 1: Tripwire pre-arm before AVX2 (v5.5.164)
-    // Check if at least 2 of 3 trained pixels match target colour; if so, return sentinel
-    // to signal pre-arm and skip AVX2 loop (~200µs saved per fire).
-    if (tripwireReady && tripwireActiveIdx && outGridSamples) {
-      int tr = (int)GetRValue(cfg.target);
-      int tg = (int)GetGValue(cfg.target);
-      int tb = (int)GetBValue(cfg.target);
-      int tolSq = cfg.tolerance * cfg.tolerance;
-
-      int matchCount = 0;
-      for (int k = 0; k < 3; k++) {
-        int idx = tripwireActiveIdx[k];
-        if (idx >= 0 && idx < 9) {
-          DWORD pix = outGridSamples[idx];
-          int r = (int)((pix >> 16) & 0xFF);
-          int g = (int)((pix >> 8) & 0xFF);
-          int b = (int)(pix & 0xFF);
-          int dr = r - tr, dg = g - tg, db = b - tb;
-          if ((dr*dr + dg*dg + db*db) <= tolSq) {
-            matchCount++;
-          }
-        }
-      }
-
-      if (matchCount >= 2) {
-        m_d3dCtx->Unmap(m_stagingTex, 0);
-        return -1000; // sentinel: tripwire fired, skip AVX2
-      }
-    }
 
     int match = 0;
     for (int row = 0; row < cfg.h; row++) {
       const DWORD *rowPtr = reinterpret_cast<const DWORD *>(
           static_cast<const BYTE *>(mapped.pData) + row * mapped.RowPitch);
-      match += CountMatches(rowPtr, cfg.w, tr, tg, tb, cfg.tolerance);
-      // Early-exit: stop scanning once we know we've crossed threshold (v5.5.173)
-      if (earlyExitThreshold > 0 && match >= earlyExitThreshold) break;
+      match += CountMatches(rowPtr, cfg.w, tr, tg, tb, tolSq);
     }
 
     m_d3dCtx->Unmap(m_stagingTex, 0);
     return match;
   }
 
-  return ScanBitBlt(cfg, outGridSamples, tripwireActiveIdx, tripwireReady, outFrameTime, earlyExitThreshold);
+  return ScanBitBlt(cfg);
 }
 
 // ---------- one-shot DXGI sample for the colour picker ---------------------
@@ -525,104 +339,22 @@ void FovDetector::EnsureResources(int w, int h) {
   m_curH = h;
 }
 
-int FovDetector::ScanBitBlt(const RoiConfig &cfg, DWORD *outGridSamples,
-                            const int *tripwireActiveIdx, bool tripwireReady,
-                            LARGE_INTEGER *outFrameTime,
-                            int earlyExitThreshold) {
+int FovDetector::ScanBitBlt(const RoiConfig &cfg) {
   g_lastScanUsedDxgi = false;
-  if (outFrameTime) outFrameTime->QuadPart = 0;  // BitBlt has no frame timestamp
   EnsureResources(cfg.w, cfg.h);
   // BitBlt source is GetDC(NULL) = full virtual desktop, so screen-space coords.
   BitBlt(m_hdcMem, 0, 0, cfg.w, cfg.h, m_hdcScreen,
          cfg.x + cfg.monitorOffsetX, cfg.y + cfg.monitorOffsetY, SRCCOPY);
 
+  int tolSq = cfg.tolerance * cfg.tolerance;
   int tr = (int)GetRValue(cfg.target);
   int tg = (int)GetGValue(cfg.target);
   int tb = (int)GetBValue(cfg.target);
 
-  // Tripwire grid samples — fill from m_pixels (DIB section is contiguous w*4).
-  if (outGridSamples) {
-    for (int gy = 0; gy < 3; gy++) {
-      int sy = (cfg.h * (gy * 2 + 1)) / 6;
-      if (sy < 0) sy = 0; else if (sy >= cfg.h) sy = cfg.h - 1;
-      const DWORD *rowPtr = reinterpret_cast<const DWORD *>(m_pixels) + sy * cfg.w;
-      for (int gx = 0; gx < 3; gx++) {
-        int sx = (cfg.w * (gx * 2 + 1)) / 6;
-        if (sx < 0) sx = 0; else if (sx >= cfg.w) sx = cfg.w - 1;
-        outGridSamples[gy * 3 + gx] = rowPtr[sx] & 0x00FFFFFF;
-      }
-    }
-  }
-
-  // Option 1: Tripwire pre-arm before AVX2 (v5.5.164)
-  if (tripwireReady && tripwireActiveIdx && outGridSamples) {
-    int tolSq = cfg.tolerance * cfg.tolerance;
-
-    int matchCount = 0;
-    for (int k = 0; k < 3; k++) {
-      int idx = tripwireActiveIdx[k];
-      if (idx >= 0 && idx < 9) {
-        DWORD pix = outGridSamples[idx];
-        int r = (int)((pix >> 16) & 0xFF);
-        int g = (int)((pix >> 8) & 0xFF);
-        int b = (int)(pix & 0xFF);
-        int dr = r - tr, dg = g - tg, db = b - tb;
-        if ((dr*dr + dg*dg + db*db) <= tolSq) {
-          matchCount++;
-        }
-      }
-    }
-
-    if (matchCount >= 2) {
-      return -1000; // sentinel: tripwire fired, skip AVX2
-    }
-  }
-
   int match = 0;
   for (int row = 0; row < cfg.h; row++) {
     const DWORD *rowPtr = reinterpret_cast<const DWORD *>(m_pixels) + row * cfg.w;
-    match += CountMatches(rowPtr, cfg.w, tr, tg, tb, cfg.tolerance);
-    // Early-exit: stop scanning once we know we've crossed threshold (v5.5.173)
-    if (earlyExitThreshold > 0 && match >= earlyExitThreshold) break;
+    match += CountMatches(rowPtr, cfg.w, tr, tg, tb, tolSq);
   }
   return match;
-}
-
-bool FovDetector::CheckTripwireGDI(const RoiConfig &cfg,
-                                    const int *tripwireActiveIdx,
-                                    COLORREF target, int tolerance) {
-  if (!tripwireActiveIdx) return false;
-
-  HDC hdc = GetDC(NULL);
-  if (!hdc) return false;
-
-  // 3x3 grid cell centres (same layout as Scan())
-  struct { int x, y; } cells[9];
-  for (int gy = 0; gy < 3; gy++) {
-    for (int gx = 0; gx < 3; gx++) {
-      cells[gy * 3 + gx].x = cfg.monitorOffsetX + cfg.x + (cfg.w * (gx * 2 + 1)) / 6;
-      cells[gy * 3 + gx].y = cfg.monitorOffsetY + cfg.y + (cfg.h * (gy * 2 + 1)) / 6;
-    }
-  }
-
-  int tr = GetRValue(target), tg = GetGValue(target), tb = GetBValue(target);
-  int tolSq = tolerance * tolerance;
-
-  int matchCount = 0;
-  for (int k = 0; k < 3; k++) {
-    int idx = tripwireActiveIdx[k];
-    if (idx >= 0 && idx < 9) {
-      COLORREF c = GetPixel(hdc, cells[idx].x, cells[idx].y);
-      if (c != CLR_INVALID) {
-        int r = GetRValue(c), g = GetGValue(c), b = GetBValue(c);
-        int dr = r - tr, dg = g - tg, db = b - tb;
-        if ((dr * dr + dg * dg + db * db) <= tolSq) {
-          matchCount++;
-        }
-      }
-    }
-  }
-
-  ReleaseDC(NULL, hdc);
-  return matchCount >= 2;
 }

@@ -26,11 +26,9 @@
 #include <QGuiApplication>
 
 #include <psapi.h>
-#include <avrt.h>
 #pragma comment(lib, "dwmapi.lib")
 #pragma comment(lib, "gdiplus.lib")
 #pragma comment(lib, "psapi.lib")
-#pragma comment(lib, "avrt.lib")
 
 using namespace Gdiplus;
 
@@ -50,35 +48,34 @@ void StartBlockInputWorker() {
   std::thread([]() {
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
     while (g_running) {
-      // Spin-wait for 1ms to catch immediate SetEvent signals (~0.01ms vs ~1ms scheduler latency)
-      ULONGLONG spinStart = GetTickCount64();
-      DWORD wait = WAIT_TIMEOUT;
-      while (GetTickCount64() - spinStart < 1 && wait == WAIT_TIMEOUT) {
-        wait = WaitForSingleObject(g_lockEvent, 0);
-        if (wait == WAIT_OBJECT_0) break;
-        _mm_pause();
-      }
-      // Fall back to blocking wait if not signaled during spin
-      if (wait != WAIT_OBJECT_0) {
-        wait = WaitForSingleObject(g_lockEvent, INFINITE);
-      }
+      DWORD wait = WaitForSingleObject(g_lockEvent, INFINITE);
       if (wait != WAIT_OBJECT_0 || !g_running) continue;
 
       int durationMs = g_lockDurationMs.exchange(0);
       if (durationMs <= 0) continue;
 
-      // BlockInput(TRUE/FALSE) MUST both execute on the SAME thread.
-      // Windows thread affinity rule: only the thread that blocked can unblock.
       g_blockInputActive = true;
       BlockInput(TRUE);
       int ticks = (durationMs + 9) / 10;
       for (int i = 0; i < ticks && IsFortniteForeground(); i++) Sleep(10);
       BlockInput(FALSE);
       g_blockInputActive = false;
-      g_preArmActive = false;
       g_lastLockTime = GetTickCount64();
     }
   }).detach();
+}
+
+// Helper function to flush pending input messages before blocking
+static void FlushPendingInputMessages() {
+  MSG msg;
+  // Remove all pending keyboard and mouse messages from the queue
+  while (PeekMessageW(&msg, NULL, WM_KEYFIRST, WM_KEYLAST, PM_REMOVE)) {
+  }
+  while (PeekMessageW(&msg, NULL, WM_MOUSEFIRST, WM_MOUSELAST, PM_REMOVE)) {
+  }
+  // Also flush any other input messages
+  while (PeekMessageW(&msg, NULL, 0, 0, PM_REMOVE)) {
+  }
 }
 
 // High-frequency thread to detect Fortnite focus changes instantly (Alt-Tab
@@ -95,17 +92,13 @@ void FocusMonitorThread() {
     bool currentFortniteFocused = IsFortniteForeground();
     g_fortniteFocusedCache = currentFortniteFocused;
 
-    // Focus LOST edge: abort any active BlockInput via the worker thread.
-    // We cannot call BlockInput(FALSE) here because Windows thread affinity
-    // rule means only the worker thread (which called BlockInput(TRUE)) can
-    // successfully unblock. Instead, zero the duration so the worker's
-    // Sleep loop exits on the next 10ms tick and calls BlockInput(FALSE).
+    // Focus LOST edge: abort any active BlockInput immediately
     if (lastFortniteFocused && !currentFortniteFocused) {
       focusLostTime = GetTickCount64();
       if (g_blockInputActive.load()) {
-        g_lockDurationMs = 0;  // Signal worker to release immediately
+        BlockInput(FALSE);
+        g_blockInputActive = false;
       }
-      g_preArmActive = false;
       g_mouseSuspendedUntil = 0;
     }
 
@@ -114,8 +107,7 @@ void FocusMonitorThread() {
     // — locking on those eats keys during normal gameplay.
     if (!lastFortniteFocused && currentFortniteFocused) {
       ULONGLONG unfocusedMs = GetTickCount64() - focusLostTime;
-      if (unfocusedMs >= 500 && !g_blockInputActive.load() &&
-          (GetTickCount64() - g_lastLockTime.load() > 500)) {
+      if (unfocusedMs >= 500 && !g_blockInputActive.load()) {
         g_lockDurationMs = 400;
         SetEvent(g_lockEvent);
         LOG_INFO("Alt-tab focus detected (400ms BlockInput for FOV stabilization)");
@@ -126,112 +118,14 @@ void FocusMonitorThread() {
   }
 }
 
-// ---- Tripwire helpers (v5.5.162) ------------------------------------------
-// Auto-learned 3-pixel tripwire: fires BlockInput speculatively when three
-// trained ROI pixels all match target colour in the same frame, skipping the
-// wait for the full AVX2 ROI scan to confirm. See plan v3 for design rationale.
-
-static bool PixelMatchesTarget(DWORD pix, COLORREF target, int tolerance) {
-  int b = (int)(pix & 0xFF);
-  int g = (int)((pix >> 8) & 0xFF);
-  int r = (int)((pix >> 16) & 0xFF);
-  int tr = (int)GetRValue(target);
-  int tg = (int)GetGValue(target);
-  int tb = (int)GetBValue(target);
-  int dr = r - tr, dg = g - tg, db = b - tb;
-  return dr * dr + dg * dg + db * db <= tolerance * tolerance;
-}
-
-// Promote learning to "ready" once we have >=10 events and >=3 candidates
-// with 100% hit rate AND <0.1% noise rate. Returns true on activation.
-static bool TryActivateTripwire(Profile &p) {
-  if (p.tripwireEvents < 5) return false;
-  if (p.tripwireCandidates.size() < 3) return false;
-
-  int qualifiedIdx[9];
-  long long qualifiedScore[9];
-  int qualifiedCount = 0;
-  for (int i = 0; i < (int)p.tripwireCandidates.size() && qualifiedCount < 9; i++) {
-    auto &c = p.tripwireCandidates[i];
-    if (c.hits != p.tripwireEvents) continue;        // 100% hit rate gate
-    if (c.idleSamples < 500) continue;               // need enough idle samples
-    if (c.noise * 1000 > c.idleSamples) continue;    // <0.1% noise rate gate
-    qualifiedIdx[qualifiedCount] = i;
-    qualifiedScore[qualifiedCount] =
-        (long long)c.idleSamples - (long long)c.noise * 1000;
-    qualifiedCount++;
-  }
-
-  if (qualifiedCount < 3) return false;
-
-  // Selection sort the top 3 by score (qualifiedCount <= 9, no perf concern).
-  for (int k = 0; k < 3; k++) {
-    int bestK = k;
-    for (int j = k + 1; j < qualifiedCount; j++) {
-      if (qualifiedScore[j] > qualifiedScore[bestK]) bestK = j;
-    }
-    if (bestK != k) {
-      std::swap(qualifiedIdx[k], qualifiedIdx[bestK]);
-      std::swap(qualifiedScore[k], qualifiedScore[bestK]);
-    }
-    p.tripwireActiveIdx[k] = qualifiedIdx[k];
-  }
-
-  p.tripwireReady = true;
-  p.tripwireSavedRoiX = p.roi_x;
-  p.tripwireSavedRoiY = p.roi_y;
-  p.tripwireSavedRoiW = p.roi_w;
-  p.tripwireSavedRoiH = p.roi_h;
-  p.tripwireSavedColor = p.target_color;
-  p.tripwireSavedTolerance = p.tolerance;
-
-  std::wstring profilePath = GetProfilesPath() + L"/" + p.name + L".json";
-  p.Save(profilePath);
-  LOG_INFO("Tripwire activated (3-pixel coincidence trained)");
-  return true;
-}
-
 // FOV Detector Thread - Now focused solely on ROI scanning
 void DetectorThread() {
-  // Option 2: Scheduler priority boost (v5.5.164)
-  SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
-  DWORD taskIndex = 0;
-  HANDLE taskHandle = AvSetMmThreadCharacteristics(L"Pro Audio", &taskIndex);
-  if (taskHandle) {
-    LOG_INFO("Detector thread: MMCSS Pro Audio enabled");
-  } else {
-    LOG_INFO("Detector thread: MMCSS unavailable (Home Edition?), using priority boost alone");
-  }
-
-  // Option 3: CPU core pinning (v5.5.164)
-  SYSTEM_INFO sysInfo;
-  GetSystemInfo(&sysInfo);
-  DWORD numCores = sysInfo.dwNumberOfProcessors;
-  if (numCores > 1) {
-    // Pin to last core to avoid UI thread (typically core 0)
-    DWORD coreIdx = numCores - 1;
-    DWORD_PTR affinityMask = 1ULL << coreIdx;
-    if (SetThreadAffinityMask(GetCurrentThread(), affinityMask)) {
-      LOG_INFO("Detector thread pinned to core %lu", coreIdx);
-    } else {
-      LOG_INFO("Detector thread: SetThreadAffinityMask failed (may be OK on low-core systems)");
-    }
-  }
-
   bool lastDiving = false;
   ULONGLONG peakMatchTimestamp = 0;
   float lastSensX = -1.0f;
   RECT cachedMonitorRect = {};
   int cachedScreenIdx = -1;
   int cachedDisplayGen = -1;
-  LARGE_INTEGER frameTime{};
-
-  // Cache QPC frequency once — it never changes at runtime (v5.5.173)
-  LARGE_INTEGER qpcFreqCached;
-  QueryPerformanceFrequency(&qpcFreqCached);
-
-  // Throttle IsCursorCurrentlyVisible() to every ~5ms (v5.5.173)
-  ULONGLONG lastCursorCheckMs = 0;
 
   timeBeginPeriod(1);
   while (g_running) {
@@ -244,19 +138,8 @@ void DetectorThread() {
       g_requiredMatchCount =
           (int)((p.diveGlideMatch / 100.0f) * (p.roi_w * p.roi_h));
 
-      // Cache GetTickCount64() once per iteration to avoid ~10+ redundant
-      // kernel transitions per spin cycle (~15-25ns each) (v5.5.173)
-      ULONGLONG now = GetTickCount64();
-
       bool currentFortniteFocused = g_fortniteFocusedCache.load();
-
-      // Throttle IsCursorCurrentlyVisible() to every ~5ms — the cursor state
-      // only changes when the user opens inventory/map, not every microsecond.
-      // Saves thousands of GetCursorInfo() syscalls per second (v5.5.173)
-      if (now - lastCursorCheckMs >= 5) {
-        g_isCursorVisible = IsCursorCurrentlyVisible();
-        lastCursorCheckMs = now;
-      }
+      g_isCursorVisible = IsCursorCurrentlyVisible();
 
       // Only scan ROI when Fortnite is the foreground window
       if (currentFortniteFocused) {
@@ -277,84 +160,17 @@ void DetectorThread() {
         // Store screen-space offset for BitBlt fallback
         cfg.monitorOffsetX = mRect.left;
         cfg.monitorOffsetY = mRect.top;
-
-        // --- Tripwire learning state housekeeping (v5.5.162) ---------------
-        // Drop learned tripwire if ROI/colour/tolerance changed since saving.
-        if (p.tripwireReady &&
-            (p.roi_x != p.tripwireSavedRoiX ||
-             p.roi_y != p.tripwireSavedRoiY ||
-             p.roi_w != p.tripwireSavedRoiW ||
-             p.roi_h != p.tripwireSavedRoiH ||
-             p.target_color != p.tripwireSavedColor ||
-             p.tolerance != p.tripwireSavedTolerance)) {
-          p.tripwireCandidates.clear();
-          p.tripwireEvents = 0;
-          p.tripwireReady = false;
-          p.tripwireActiveIdx[0] = p.tripwireActiveIdx[1] =
-              p.tripwireActiveIdx[2] = -1;
-          LOG_INFO("Tripwire reset (ROI/colour/tolerance changed)");
-        }
-        // Initialise the 3x3 candidate grid on first encounter.
-        if (p.tripwireCandidates.empty() && p.roi_w > 0 && p.roi_h > 0) {
-          p.tripwireCandidates.resize(9);
-          for (int i = 0; i < 9; i++) {
-            p.tripwireCandidates[i].x = (p.roi_w * ((i % 3) * 2 + 1)) / 6;
-            p.tripwireCandidates[i].y = (p.roi_h * ((i / 3) * 2 + 1)) / 6;
-            p.tripwireCandidates[i].hits = 0;
-            p.tripwireCandidates[i].noise = 0;
-            p.tripwireCandidates[i].idleSamples = 0;
-          }
-        }
-
-        DWORD gridSamples[9] = {0};
-        frameTime = {};
         ULONGLONG startMs = GetTickCount64();
-        int scanResult = g_detector.Scan(cfg, gridSamples,
-                                        (const int *)p.tripwireActiveIdx,
-                                        p.tripwireReady,
-                                        &frameTime,
-                                        g_requiredMatchCount.load());
+        int scanResult = g_detector.Scan(cfg);
         ULONGLONG endMs = GetTickCount64();
         ULONGLONG scanMs = endMs - startMs;
         g_detectionDelayMs = scanMs;
 
         // -1 means no new frame was available (DXGI timeout) — skip this cycle
         // entirely to avoid false edge detection from a stale matchCount of 0.
-        // -1000 means tripwire pre-arm fired (Option 1, v5.5.164) — skip AVX2 loop.
+        // Spin instead of Sleep(1) so we react to the next frame the instant
+        // it arrives (the prior 1ms nap was the dominant latency source).
         if (scanResult < 0) {
-          if (scanResult == -1000) {
-            // Tripwire pre-arm fired before AVX2 loop
-            g_lastLockTime = now;
-            g_mouseSuspendedUntil = now + 200;
-            g_lockDurationMs = 200;
-            g_preArmActive = true;
-            g_lastPreArmTime = now;
-            SetEvent(g_lockEvent);
-            LOG_INFO("Tripwire pre-arm fired (3-pixel coincidence, early)");
-          } else if (scanResult == -1) {
-            // Sub-frame GDI tripwire check between DXGI frames (v5.5.165)
-            if (p.tripwireReady && currentFortniteFocused && !g_isCursorVisible &&
-                !g_blockInputActive.load() && !g_preArmActive.load() &&
-                now >= g_mouseSuspendedUntil &&
-                (now - g_lastLockTime > 500)) {
-              static LARGE_INTEGER lastGdiCheck{};
-              LARGE_INTEGER nowQpc;
-              QueryPerformanceCounter(&nowQpc);
-              // Throttle to 100µs via QPC (using cached frequency, v5.5.173)
-              if ((nowQpc.QuadPart - lastGdiCheck.QuadPart) * 1000000LL / qpcFreqCached.QuadPart >= 100) {
-                lastGdiCheck = nowQpc;
-                if (g_detector.CheckTripwireGDI(cfg, p.tripwireActiveIdx,
-                                                p.target_color, p.tolerance)) {
-                  g_lastLockTime = now;
-                  g_mouseSuspendedUntil = now + 200;
-                  g_lockDurationMs = 200;
-                  g_preArmActive = true;
-                  SetEvent(g_lockEvent);
-                  LOG_INFO("Sub-frame GDI tripwire fired");
-                }
-              }
-            }
-          }
           _mm_pause();
           continue;
         }
@@ -369,66 +185,12 @@ void DetectorThread() {
 
         // Peak match tracking (2s decay window)
         int currentMatch = g_matchCount.load();
+        ULONGLONG now = GetTickCount64();
         if (now - peakMatchTimestamp > 2000) {
           g_peakMatchCount = currentMatch;
           peakMatchTimestamp = now;
         } else if (currentMatch > g_peakMatchCount.load()) {
           g_peakMatchCount = currentMatch;
-        }
-
-        // --- Tripwire training & pre-arm (v5.5.162) ------------------------
-        bool diving = (currentMatch >= g_requiredMatchCount.load());
-
-        // Train on FOV-rising edge (idle -> diving).
-        if (diving && !lastDiving && !p.tripwireCandidates.empty()) {
-          for (int i = 0; i < (int)p.tripwireCandidates.size(); i++) {
-            if (PixelMatchesTarget(gridSamples[i], p.target_color, p.tolerance)) {
-              p.tripwireCandidates[i].hits++;
-            }
-          }
-          p.tripwireEvents++;
-          TryActivateTripwire(p);
-        }
-
-        // Sample noise during clearly-idle frames (matchCount well below
-        // threshold). Builds the per-candidate false-match denominator that
-        // the activation gate uses to enforce <0.1% noise.
-        if (currentMatch < g_requiredMatchCount.load() / 5 &&
-            !p.tripwireCandidates.empty()) {
-          for (int i = 0; i < (int)p.tripwireCandidates.size(); i++) {
-            p.tripwireCandidates[i].idleSamples++;
-            if (PixelMatchesTarget(gridSamples[i], p.target_color, p.tolerance)) {
-              p.tripwireCandidates[i].noise++;
-            }
-          }
-        }
-
-        // Pre-arm check: AT LEAST 2 of 3 trained pixels match in this same frame
-        // AND matchCount > 0 (co-validation). Fires BlockInput speculatively
-        // ~150-200µs before the full scan would have crossed threshold.
-        if (p.tripwireReady && currentMatch > 0 &&
-            !g_blockInputActive.load() && !g_preArmActive.load() &&
-            !g_isCursorVisible &&
-            now >= g_mouseSuspendedUntil &&
-            (now - g_lastLockTime > 500)) {
-          int matchCount = 0;
-          for (int k = 0; k < 3; k++) {
-            int idx = p.tripwireActiveIdx[k];
-            if (idx >= 0 && idx < (int)p.tripwireCandidates.size() &&
-                PixelMatchesTarget(gridSamples[idx], p.target_color,
-                                   p.tolerance)) {
-              matchCount++;
-            }
-          }
-          if (matchCount >= 2) {
-            g_lastLockTime = now;
-            g_mouseSuspendedUntil = now + 200;
-            g_lockDurationMs = 200;
-            g_preArmActive = true;
-            g_lastPreArmTime = now;
-            SetEvent(g_lockEvent);
-            LOG_INFO("Tripwire pre-arm fired (2+ pixel match)");
-          }
         }
       } else {
         // Fortnite not focused, reset detection to 0
@@ -439,24 +201,29 @@ void DetectorThread() {
 
       bool nowDiving = (g_matchCount.load() >= g_requiredMatchCount.load());
 
+      // Skip edge detection on first frame after focus return to avoid spurious FOV transition
+      if (g_justRefocused.exchange(false)) {
+        lastDiving = nowDiving;
+      }
+
       // Only trigger input blocking locks if Fortnite is actually focused AND the cursor is hidden.
       // This prevents the mouse from locking up on the desktop if the user tabs out,
       // or if they open the in-game map/inventory (which shows the cursor and obscures the ROI).
-      if (currentFortniteFocused && !g_isCursorVisible && now >= g_mouseSuspendedUntil) {
+      if (currentFortniteFocused && !g_isCursorVisible && GetTickCount64() >= g_mouseSuspendedUntil) {
         // Edge: Gliding -> Diving (Nitro)
         if (nowDiving && !lastDiving && !g_blockInputActive.load() &&
-            (now - g_lastLockTime > 500)) {
-          g_lastLockTime = now;
-          g_mouseSuspendedUntil = now + 200;
+            (GetTickCount64() - g_lastLockTime > 500)) {
+          g_lastLockTime = GetTickCount64();
+          g_mouseSuspendedUntil = GetTickCount64() + 200;
           g_lockDurationMs = 200;
           SetEvent(g_lockEvent);
           LOG_INFO("Transition: glide->dive (200ms BlockInput)");
         }
         // Edge: Diving -> Gliding (Nitro)
         else if (!nowDiving && lastDiving && !g_blockInputActive.load() &&
-                 (now - g_lastLockTime > 500)) {
-          g_lastLockTime = now;
-          g_mouseSuspendedUntil = now + 250;
+                 (GetTickCount64() - g_lastLockTime > 500)) {
+          g_lastLockTime = GetTickCount64();
+          g_mouseSuspendedUntil = GetTickCount64() + 250;
           g_lockDurationMs = 250;
           SetEvent(g_lockEvent);
           LOG_INFO("Transition: dive->glide (250ms BlockInput)");
@@ -464,15 +231,14 @@ void DetectorThread() {
       }
 
       // Reset UI tracker once timer expires
-      if (g_mouseSuspendedUntil > 0 && now >= g_mouseSuspendedUntil) {
+      if (g_mouseSuspendedUntil > 0 &&
+          GetTickCount64() >= g_mouseSuspendedUntil) {
         g_mouseSuspendedUntil = 0;
       }
 
-      if (nowDiving != lastDiving) {
-        g_logic.ApplyRetroCorrection(frameTime, nowDiving);
-      }
       lastDiving = nowDiving;
       g_isDiving = nowDiving;
+      g_logic.SetDivingState(nowDiving);
     }
     // Spin (peg one core) only while actively scanning; otherwise idle politely.
     // _mm_pause is a CPU hint that yields hyperthread cycles during a spin loop.
@@ -576,7 +342,7 @@ LRESULT CALLBACK MsgWndProc(HWND hWnd, UINT message, WPARAM wParam,
     if (allowAngleUpdate) {
       g_logic.Update(dx);
     }
-    // Fall through to DefWindowProc — required to free the raw input buffer.
+    return 0;
   }
   return DefWindowProc(hWnd, message, wParam, lParam);
 }
