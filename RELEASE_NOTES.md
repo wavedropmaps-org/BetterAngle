@@ -1,3 +1,6 @@
+### BetterAngle Pro v5.5.244
+- Automated build release.
+
 ### BetterAngle Pro v5.5.243
 - **Modern Peak Restoration (All-in-One)**: Restored the entire codebase to the v5.5.230 peak. This brings back all modern features simultaneously, including AVX2 Scanning, Mouse Ring Buffer (Angle Precision), Thread Affinity fixes, Space Bar Ghosting fixes, and Cursor Grace Periods.
 
