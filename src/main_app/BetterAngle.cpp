@@ -39,31 +39,6 @@ void PerformanceMonitorThread();
 ULONG_PTR g_gdiplusToken;
 FovDetector g_detector;
 
-// Pre-spawned BlockInput worker. Sleeps on g_lockEvent; signaled by FOV-edge
-// detection. Skips the ~5-20ms cost of spawning a fresh thread per transition.
-// Auto-reset event coalesces back-to-back signals (the most recent duration wins,
-// which is fine — both glide↔dive durations are ballpark equivalent).
-void StartBlockInputWorker() {
-  std::thread([]() {
-    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
-    while (g_running) {
-      DWORD wait = WaitForSingleObject(g_lockEvent, INFINITE);
-      if (wait != WAIT_OBJECT_0 || !g_running) continue;
-
-      int durationMs = g_lockDurationMs.exchange(0);
-      if (durationMs <= 0) continue;
-
-      g_blockInputActive = true;
-      BlockInput(TRUE);
-      int ticks = (durationMs + 9) / 10;
-      for (int i = 0; i < ticks && IsFortniteForeground(); i++) Sleep(10);
-      BlockInput(FALSE);
-      g_blockInputActive = false;
-      g_lastLockTime = GetTickCount64();
-    }
-  }).detach();
-}
-
 // Helper function to flush pending input messages before blocking
 static void FlushPendingInputMessages() {
   MSG msg;
@@ -80,40 +55,49 @@ static void FlushPendingInputMessages() {
 // High-frequency thread to detect Fortnite focus changes instantly (Alt-Tab
 // detection)
 void FocusMonitorThread() {
-  // Seed initial state from reality. If Fortnite is already focused at
-  // startup, lastFortniteFocused must be true so the focus-GAINED edge
-  // does NOT fire on iteration 1 — that would call BlockInput(TRUE) and
-  // freeze the OS for 400ms (focusLostTime=0 trivially beats the 500ms guard).
-  bool lastFortniteFocused = IsFortniteForeground();
-  ULONGLONG focusLostTime = GetTickCount64();
-
+  bool lastFortniteFocused = false;
   while (g_running) {
     bool currentFortniteFocused = IsFortniteForeground();
     g_fortniteFocusedCache = currentFortniteFocused;
 
-    // Focus LOST edge: abort any active BlockInput immediately
-    if (lastFortniteFocused && !currentFortniteFocused) {
-      focusLostTime = GetTickCount64();
-      if (g_blockInputActive.load()) {
-        BlockInput(FALSE);
-        g_blockInputActive = false;
-      }
-      g_mouseSuspendedUntil = 0;
-    }
-
-    // Focus GAINED edge: only lock if unfocused for >=500ms (real alt-tab).
-    // Shorter gaps are overlay/notification blips (Discord, GeForce, Xbox bar)
-    // — locking on those eats keys during normal gameplay.
+    // Detect Alt-Tab back into Fortnite with ultra-low latency (1ms polling)
     if (!lastFortniteFocused && currentFortniteFocused) {
-      ULONGLONG unfocusedMs = GetTickCount64() - focusLostTime;
-      if (unfocusedMs >= 500 && !g_blockInputActive.load()) {
-        g_lockDurationMs = 400;
-        SetEvent(g_lockEvent);
-        LOG_INFO("Alt-tab focus detected (400ms BlockInput for FOV stabilization)");
-      }
+      // ALT-TAB COOLDOWN: BlockInput locks the mouse at the OS level so
+      // physical mouse movement during the focus switch can't affect
+      // Fortnite's FOV. Uses same Shock & Restore pattern as glide/dive.
+      g_mouseSuspendedUntil = GetTickCount64() + 400;
+      g_lockTriggerReason = 3; // Alt-Tab Return
+      g_lockCount++;
+
+      std::thread([]() {
+        std::lock_guard<std::mutex> lock(g_lockMutex);
+        g_lockInProgress = true;
+        g_lockThreadId = GetCurrentThreadId();
+
+        for (int i = 0; i < 256; i++) {
+          g_rawKeyUpDetected[i] = false;
+          g_rawKeyMakeDetected[i] = false;
+        }
+        auto initialState = GetGamingKeyState(); // Pre-lock snapshot
+
+        {
+          std::lock_guard<std::mutex> bLock(g_blockInputMutex);
+          g_blockInputActive = true;
+          BlockInput(TRUE);
+          Sleep(400);
+          BlockInput(FALSE);
+          g_blockInputActive = false;
+        }
+
+        SyncGamingKeysNitro(initialState); // Shock & Restore
+
+        g_lockInProgress = false;
+      }).detach();
+
+      LOG_INFO("Alt-tab cooldown active (400ms BlockInput + Nitro sync)");
     }
     lastFortniteFocused = currentFortniteFocused;
-    Sleep(1);
+    Sleep(0); // Max CPU performance for lightning fast focus detection
   }
 }
 
@@ -121,18 +105,11 @@ void FocusMonitorThread() {
 void DetectorThread() {
   bool lastDiving = false;
   ULONGLONG peakMatchTimestamp = 0;
-  float lastSensX = -1.0f;
-  RECT cachedMonitorRect = {};
-  int cachedScreenIdx = -1;
 
-  timeBeginPeriod(1);
   while (g_running) {
     if (!g_allProfiles.empty() && g_currentSelection == NONE) {
       Profile &p = g_allProfiles[g_selectedProfileIdx];
-      if (p.sensitivityX != lastSensX) {
-        g_logic.LoadProfile(p.sensitivityX);
-        lastSensX = p.sensitivityX;
-      }
+      g_logic.LoadProfile(p.sensitivityX);
       g_requiredMatchCount =
           (int)((p.diveGlideMatch / 100.0f) * (p.roi_w * p.roi_h));
 
@@ -141,31 +118,15 @@ void DetectorThread() {
 
       // Only scan ROI when Fortnite is the foreground window
       if (currentFortniteFocused) {
-        if (g_screenIndex != cachedScreenIdx) {
-          cachedMonitorRect = GetMonitorRectByIndex(g_screenIndex);
-          cachedScreenIdx = g_screenIndex;
-        }
-        RECT mRect = cachedMonitorRect;
+        RECT mRect = GetMonitorRectByIndex(g_screenIndex);
         RoiConfig cfg = {
-            p.roi_x, p.roi_y, p.roi_w, p.roi_h,
-            p.target_color, p.tolerance};
-        // Store screen-space offset for BitBlt fallback
-        cfg.monitorOffsetX = mRect.left;
-        cfg.monitorOffsetY = mRect.top;
+            p.roi_x + mRect.left, p.roi_y + mRect.top, p.roi_w, p.roi_h,
+            p.target_color,       p.tolerance};
         ULONGLONG startMs = GetTickCount64();
-        int scanResult = g_detector.Scan(cfg);
+        g_matchCount = g_detector.Scan(cfg);
         ULONGLONG endMs = GetTickCount64();
         ULONGLONG scanMs = endMs - startMs;
         g_detectionDelayMs = scanMs;
-
-        // -1 means no new frame was available (DXGI timeout) — skip this cycle
-        // entirely to avoid false edge detection from a stale matchCount of 0.
-        if (scanResult < 0) {
-          Sleep(1);
-          continue;
-        }
-
-        g_matchCount = scanResult;
 
         // Scanner CPU %: time spent scanning vs total loop period
         int cpuPct = (scanMs > 0) ? (int)((scanMs * 100) / (scanMs + 10)) : 0;
@@ -189,32 +150,86 @@ void DetectorThread() {
 
       bool nowDiving = (g_matchCount.load() >= g_requiredMatchCount.load());
 
-      // Skip edge detection on first frame after focus return to avoid spurious FOV transition
-      if (g_justRefocused.exchange(false)) {
-        lastDiving = nowDiving;
-      }
-
-      // Only trigger input blocking locks if Fortnite is actually focused AND the cursor is hidden.
-      // This prevents the mouse from locking up on the desktop if the user tabs out,
-      // or if they open the in-game map/inventory (which shows the cursor and obscures the ROI).
-      if (currentFortniteFocused && !g_isCursorVisible && GetTickCount64() >= g_mouseSuspendedUntil) {
+      if (GetTickCount64() >= g_mouseSuspendedUntil) {
         // Edge: Gliding -> Diving (Nitro)
-        if (nowDiving && !lastDiving && !g_blockInputActive.load() &&
+        if (nowDiving && !lastDiving &&
             (GetTickCount64() - g_lastLockTime > 500)) {
           g_lastLockTime = GetTickCount64();
-          g_mouseSuspendedUntil = GetTickCount64() + 200;
-          g_lockDurationMs = 200;
-          SetEvent(g_lockEvent);
-          LOG_INFO("Transition: glide->dive (200ms BlockInput)");
+          g_mouseSuspendedUntil = GetTickCount64() + 700;
+
+          std::thread([]() {
+            std::lock_guard<std::mutex> lock(g_lockMutex);
+            g_lockInProgress = true;
+            g_lockCount++;
+            g_lockThreadId = GetCurrentThreadId();
+            ULONGLONG start = GetTickCount64();
+
+            for (int i = 0; i < 256; i++) {
+              g_rawKeyUpDetected[i] = false;
+              g_rawKeyMakeDetected[i] = false;
+            }
+            g_wPreLock =
+                (GetAsyncKeyState('W') & 0x8000) != 0 ? (short)1 : (short)0;
+            auto initialState = GetGamingKeyState(); // Pre-lock snapshot
+
+            {
+              std::lock_guard<std::mutex> lock(g_blockInputMutex);
+              g_blockInputActive = true;
+              BlockInput(TRUE);
+              Sleep(700);
+              BlockInput(FALSE);
+              g_blockInputActive = false;
+            }
+
+            g_lockDurationMs = (long long)(GetTickCount64() - start);
+            SyncGamingKeysNitro(initialState); // Nitro Flush + Delta sync
+
+            g_lastLockTime = GetTickCount64();
+            g_lockInProgress = false;
+          }).detach();
+
+          LOG_INFO("Transition: glide->dive, Nitro Delta sync (700ms)");
+          g_lockTriggerReason = 1; // Glide → Dive
         }
         // Edge: Diving -> Gliding (Nitro)
-        else if (!nowDiving && lastDiving && !g_blockInputActive.load() &&
+        else if (!nowDiving && lastDiving &&
                  (GetTickCount64() - g_lastLockTime > 500)) {
           g_lastLockTime = GetTickCount64();
-          g_mouseSuspendedUntil = GetTickCount64() + 250;
-          g_lockDurationMs = 250;
-          SetEvent(g_lockEvent);
-          LOG_INFO("Transition: dive->glide (250ms BlockInput)");
+          g_mouseSuspendedUntil = GetTickCount64() + 1000;
+
+          std::thread([]() {
+            std::lock_guard<std::mutex> lock(g_lockMutex);
+            g_lockInProgress = true;
+            g_lockCount++;
+            g_lockThreadId = GetCurrentThreadId();
+            ULONGLONG start = GetTickCount64();
+
+            for (int i = 0; i < 256; i++) {
+              g_rawKeyUpDetected[i] = false;
+              g_rawKeyMakeDetected[i] = false;
+            }
+            g_wPreLock =
+                (GetAsyncKeyState('W') & 0x8000) != 0 ? (short)1 : (short)0;
+            auto initialState = GetGamingKeyState(); // Pre-lock snapshot
+
+            {
+              std::lock_guard<std::mutex> lock(g_blockInputMutex);
+              g_blockInputActive = true;
+              BlockInput(TRUE);
+              Sleep(1000);
+              BlockInput(FALSE);
+              g_blockInputActive = false;
+            }
+
+            g_lockDurationMs = (long long)(GetTickCount64() - start);
+            SyncGamingKeysNitro(initialState); // Nitro Flush + Delta sync
+
+            g_lastLockTime = GetTickCount64();
+            g_lockInProgress = false;
+          }).detach();
+
+          LOG_INFO("Transition: dive->glide, Nitro Delta sync (1000ms)");
+          g_lockTriggerReason = 2; // Dive → Glide
         }
       }
 
@@ -230,7 +245,6 @@ void DetectorThread() {
     }
     Sleep(1); // CPU Fix: Drops usage from 100% to ~1%
   }
-  timeEndPeriod(1);
 }
 
 // Screen Snapshot for Flicker-Free Selection (v4.9.15)
@@ -247,6 +261,7 @@ void CaptureDesktop() {
   g_screenSnapshot = CreateCompatibleBitmap(hdcScreen, sw, sh);
   HGDIOBJ hOld = SelectObject(hdcMem, g_screenSnapshot);
 
+  // Capture the entire virtual desktop
   BitBlt(hdcMem, 0, 0, sw, sh, hdcScreen, sx, sy, SRCCOPY);
 
   SelectObject(hdcMem, hOld);
@@ -279,39 +294,125 @@ static std::wstring GetLastErrorString() {
   return message;
 }
 
-// Helper for manual global hotkey polling
-static bool CheckCustomHotkey(UINT mod, UINT vk, bool& wasPressed) {
-    if (vk == 0) {
-        wasPressed = false;
-        return false;
-    }
-    bool pressed = (GetAsyncKeyState(vk) & 0x8000) != 0;
-    if (mod & MOD_CONTROL) pressed &= (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
-    if (mod & MOD_SHIFT) pressed &= (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
-    if (mod & MOD_ALT) pressed &= (GetAsyncKeyState(VK_MENU) & 0x8000) != 0;
-    if (mod & MOD_WIN) pressed &= ((GetAsyncKeyState(VK_LWIN) & 0x8000) || (GetAsyncKeyState(VK_RWIN) & 0x8000));
-    
-    if (pressed && !wasPressed) {
-        wasPressed = true;
-        return true;
-    }
-    if (!pressed) {
-        wasPressed = false;
-    }
-    return false;
-}
-
 // Refreshes all global hotkeys for the HUD window
 bool RefreshHotkeys(HWND hWnd) {
-  // Legacy: We now use manual async polling in WM_TIMER so mouse buttons can be bound.
-  // RegisterHotKey does not support mouse buttons.
-  return true;
+  if (!hWnd)
+    return false;
+
+  // Cache the current keybinds to avoid unnecessary re-registration
+  static Keybinds lastKeybinds = {};
+  static int lastProfileIdx = -1;
+
+  if (g_allProfiles.empty())
+    return false;
+
+  Profile &p = g_allProfiles[g_selectedProfileIdx];
+
+  // Check if keybinds have actually changed
+  bool keybindsChanged = (g_selectedProfileIdx != lastProfileIdx) ||
+                         (p.keybinds.toggleMod != lastKeybinds.toggleMod ||
+                          p.keybinds.toggleKey != lastKeybinds.toggleKey) ||
+                         (p.keybinds.roiMod != lastKeybinds.roiMod ||
+                          p.keybinds.roiKey != lastKeybinds.roiKey) ||
+                         (p.keybinds.crossMod != lastKeybinds.crossMod ||
+                          p.keybinds.crossKey != lastKeybinds.crossKey) ||
+                         (p.keybinds.zeroMod != lastKeybinds.zeroMod ||
+                          p.keybinds.zeroKey != lastKeybinds.zeroKey);
+
+  if (!keybindsChanged) {
+    // Keybinds haven't changed, no need to re-register
+    return true;
+  }
+
+  // Unregister all hotkeys first
+  for (int i = 1; i <= 6; i++) {
+    UnregisterHotKey(hWnd, i);
+  }
+
+  // Small delay to allow system to process unregistration (optional but can
+  // help)
+  Sleep(10);
+
+  // Register new hotkeys with MOD_NOREPEAT to prevent key repeat issues
+  // MOD_NOREPEAT (0x4000) prevents the hotkey from firing repeatedly when held
+  // down
+  bool ok = true;
+  std::vector<std::pair<int, std::wstring>> failedHotkeys;
+
+  auto registerWithErrorCheck = [&](int id, UINT mod, UINT vk,
+                                    const wchar_t *name) -> bool {
+    if (vk == 0) {
+      // Zero key means hotkey is disabled
+      return true;
+    }
+
+    // Apply MOD_NOREPEAT flag
+    UINT flags = mod; // Removed MOD_NOREPEAT for compat
+
+    if (!RegisterHotKey(hWnd, id, flags, vk)) {
+      DWORD err = GetLastError();
+      std::wstring errorMsg = GetLastErrorString();
+      failedHotkeys.push_back({id, L"Hotkey " + std::wstring(name) +
+                                       L" failed: " + errorMsg + L" (Error " +
+                                       std::to_wstring(err) + L")"});
+      return false;
+    }
+    return true;
+  };
+
+  ok &= registerWithErrorCheck(1, p.keybinds.toggleMod, p.keybinds.toggleKey,
+                               L"Toggle Panel");
+  ok &= registerWithErrorCheck(2, p.keybinds.roiMod, p.keybinds.roiKey,
+                               L"ROI Select");
+  ok &= registerWithErrorCheck(3, p.keybinds.crossMod, p.keybinds.crossKey,
+                               L"Crosshair Toggle");
+  ok &= registerWithErrorCheck(4, p.keybinds.zeroMod, p.keybinds.zeroKey,
+                               L"Zero Angle");
+
+  // Log failures
+  if (!failedHotkeys.empty()) {
+    for (const auto &failure : failedHotkeys) {
+      OutputDebugStringW((L"BetterAngle: " + failure.second + L"\n").c_str());
+    }
+  }
+
+  // Update cache
+  lastKeybinds = p.keybinds;
+  lastProfileIdx = g_selectedProfileIdx;
+
+  return ok;
 }
 
 // Message-Only Window for Bullet-Proof Raw Input
 LRESULT CALLBACK MsgWndProc(HWND hWnd, UINT message, WPARAM wParam,
                             LPARAM lParam) {
   if (message == WM_INPUT) {
+    UINT dwSize;
+    GetRawInputData((HRAWINPUT)lParam, RID_INPUT, NULL, &dwSize,
+                    sizeof(RAWINPUTHEADER));
+    if (dwSize > 0) {
+      std::vector<BYTE> lpb(dwSize);
+      if (GetRawInputData((HRAWINPUT)lParam, RID_INPUT, lpb.data(), &dwSize,
+                          sizeof(RAWINPUTHEADER)) == dwSize) {
+        RAWINPUT *raw = (RAWINPUT *)lpb.data();
+        if (raw->header.dwType == RIM_TYPEKEYBOARD) {
+          if (g_ghostFixInProgress.load()) {
+            // CONTAMINATION FIX: Skip events during Shock&Restore — our
+            // synthetic SendInput calls would set Br=1 (Shock KeyUp) and
+            // Mk=1 (Restore KeyDown), making the correction logic think the
+            // user released and re-pressed the key. Real hardware events are
+            // collected in a dedicated window after Restore completes.
+          } else {
+            if (raw->data.keyboard.Flags & RI_KEY_BREAK) {
+              g_rawKeyUpDetected[raw->data.keyboard.VKey] = true;
+            } else {
+              g_rawKeyMakeDetected[raw->data.keyboard.VKey] = true;
+            }
+          }
+        }
+      }
+    }
+
     int dx = GetRawInputDeltaX(lParam);
 
     ULONGLONG now = GetTickCount64();
@@ -337,20 +438,87 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
     RefreshHotkeys(hWnd);
     return 0;
 
-    // Removed WM_HOTKEY logic. Now handled in WM_TIMER to support mouse buttons.
+  case WM_HOTKEY:
+    // Ignore hotkey actions when user is assigning a keybind in settings
+    if (g_keybindAssignmentActive) {
+      return 0;
+    }
+    switch (wParam) {
+    case 1: // Toggle Panel
+      ShowControlPanel();
+      break;
+    case 2: // ROI Select Toggle
+      if (g_currentSelection == NONE) {
+        // Only allow ROI selection when Fortnite is focused
+        if (!IsFortniteForeground()) {
+          LOG_INFO("ROI selection blocked: Fortnite not focused");
+          break;
+        }
+        CaptureDesktop(); // Capture before dimming
+        g_currentSelection = SELECTING_ROI;
+        g_isSelectionActive = true;
+        long exStyle = GetWindowLong(hWnd, GWL_EXSTYLE);
+        exStyle &= ~WS_EX_TRANSPARENT;
+        SetWindowLong(hWnd, GWL_EXSTYLE, exStyle);
+        SetForegroundWindow(hWnd);
+      } else {
+        // Save the current ROI rectangle if valid before exiting selection
+        if (!g_allProfiles.empty() &&
+            g_selectionRect.right > g_selectionRect.left &&
+            g_selectionRect.bottom > g_selectionRect.top) {
+          Profile &p = g_allProfiles[g_selectedProfileIdx];
+          RECT mRect = GetMonitorRectByIndex(g_screenIndex);
+          p.roi_x = g_selectionRect.left - mRect.left;
+          p.roi_y = g_selectionRect.top - mRect.top;
+          p.roi_w = g_selectionRect.right - g_selectionRect.left;
+          p.roi_h = g_selectionRect.bottom - g_selectionRect.top;
+          // Keep existing target_color unchanged
+          p.Save(GetProfilesPath() + p.name + L".json");
+          p.Save(GetProfilesPath() + L"last_calibrated.json");
+        }
+        g_currentSelection = NONE;
+        g_isSelectionActive = false;
+        if (g_screenSnapshot) {
+          DeleteObject(g_screenSnapshot);
+          g_screenSnapshot = NULL;
+        }
+        SetWindowLong(hWnd, GWL_EXSTYLE,
+                      GetWindowLong(hWnd, GWL_EXSTYLE) | WS_EX_TRANSPARENT);
+        InvalidateRect(hWnd, NULL, FALSE);
+        g_forceRedraw = true;
+      }
+      break;
+    case 3:
+      g_showCrosshair = !g_showCrosshair;
+      g_forceRedraw = true;
+      if (!g_allProfiles.empty()) {
+        g_allProfiles[g_selectedProfileIdx].showCrosshair = g_showCrosshair;
+        g_allProfiles[g_selectedProfileIdx].Save(
+            GetProfilesPath() + g_allProfiles[g_selectedProfileIdx].name +
+            L".json");
+      }
+      SaveSettings();
+      NotifyBackendCrosshairChanged();
+      // Acoustic Cue: High beep for ON, Low beep for OFF
+      if (g_showCrosshair) Beep(750, 50);
+      else Beep(500, 50);
+      break;
+    case 4:
+      g_currentAngle = 0.0f;
+      g_logic.SetZero();
+      // Acoustic Cue: Premium reset chime
+      Beep(1000, 80);
+      break;
+    }
     return 0;
 
-  case WM_TRAYICON: {
-    // Under NOTIFYICON_VERSION_4 the mouse event is in LOWORD(lParam);
-    // raw lParam carries x/y coords so direct comparison always fails.
-    WORD evt = LOWORD(lParam);
-    if (evt == WM_RBUTTONUP || evt == WM_CONTEXTMENU) {
+  case WM_TRAYICON:
+    if (lParam == WM_RBUTTONUP) {
       ShowTrayContextMenu(hWnd);
-    } else if (evt == WM_LBUTTONDBLCLK) {
+    } else if (lParam == WM_LBUTTONDBLCLK) {
       ShowControlPanel();
     }
     return 0;
-  }
 
   case WM_COMMAND:
     if (LOWORD(wParam) == ID_TRAY_EXIT) {
@@ -394,6 +562,8 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
 
         POINT cur;
         GetCursorPos(&cur);
+        // Adjust color sample coord by the same virtual screen offset used in
+        // CaptureDesktop
         COLORREF pixel = GetPixel(hdcMem, cur.x - sx, cur.y - sy);
 
         g_pickedColor = pixel;
@@ -477,92 +647,12 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
       if (GetTickCount64() - s_bootTime < 2500)
         return 0;
 
-      // --- Manual Hotkey Polling (Supports Mouse Buttons) ---
-      if (!g_allProfiles.empty() && !g_keybindAssignmentActive) {
-        static bool s_toggleWasPressed = false;
-        static bool s_roiWasPressed = false;
-        static bool s_crossWasPressed = false;
-        static bool s_zeroWasPressed = false;
-
-        Profile &p = g_allProfiles[g_selectedProfileIdx];
-
-        // 1: Toggle Panel
-        if (CheckCustomHotkey(p.keybinds.toggleMod, p.keybinds.toggleKey, s_toggleWasPressed)) {
-          ShowControlPanel();
-        }
-
-        // 2: ROI Select
-        if (CheckCustomHotkey(p.keybinds.roiMod, p.keybinds.roiKey, s_roiWasPressed)) {
-          if (g_currentSelection == NONE) {
-            if (!IsFortniteForeground()) {
-              LOG_INFO("ROI selection blocked: Fortnite not focused");
-            } else {
-              CaptureDesktop();
-              g_currentSelection = SELECTING_ROI;
-              g_isSelectionActive = true;
-              long exStyle = GetWindowLong(hWnd, GWL_EXSTYLE);
-              exStyle &= ~WS_EX_TRANSPARENT;
-              SetWindowLong(hWnd, GWL_EXSTYLE, exStyle);
-              // Do NOT SetForegroundWindow(hWnd) — it alt-tabs the user out of
-              // Fortnite. With WS_EX_NOACTIVATE on the HUD + WS_EX_TRANSPARENT
-              // cleared, the topmost overlay catches mouse events without
-              // stealing focus.
-            }
-          } else {
-            if (!g_allProfiles.empty() &&
-                g_selectionRect.right > g_selectionRect.left &&
-                g_selectionRect.bottom > g_selectionRect.top) {
-              RECT mRect = GetMonitorRectByIndex(g_screenIndex);
-              p.roi_x = g_selectionRect.left - mRect.left;
-              p.roi_y = g_selectionRect.top - mRect.top;
-              p.roi_w = g_selectionRect.right - g_selectionRect.left;
-              p.roi_h = g_selectionRect.bottom - g_selectionRect.top;
-              p.Save(GetProfilesPath() + p.name + L".json");
-              p.Save(GetProfilesPath() + L"last_calibrated.json");
-            }
-            g_currentSelection = NONE;
-            g_isSelectionActive = false;
-            if (g_screenSnapshot) {
-              DeleteObject(g_screenSnapshot);
-              g_screenSnapshot = NULL;
-            }
-            SetWindowLong(hWnd, GWL_EXSTYLE,
-                          GetWindowLong(hWnd, GWL_EXSTYLE) | WS_EX_TRANSPARENT);
-            InvalidateRect(hWnd, NULL, FALSE);
-            g_forceRedraw = true;
-          }
-        }
-
-        // 3: Toggle Crosshair
-        if (CheckCustomHotkey(p.keybinds.crossMod, p.keybinds.crossKey, s_crossWasPressed)) {
-          g_showCrosshair = !g_showCrosshair;
-          g_forceRedraw = true;
-          if (!g_allProfiles.empty()) {
-            p.showCrosshair = g_showCrosshair;
-            p.Save(GetProfilesPath() + p.name + L".json");
-          }
-          SaveSettings();
-          NotifyBackendCrosshairChanged();
-          if (g_showCrosshair) Beep(750, 50);
-          else Beep(500, 50);
-        }
-
-        // 4: Zero Angle
-        if (CheckCustomHotkey(p.keybinds.zeroMod, p.keybinds.zeroKey, s_zeroWasPressed)) {
-          g_currentAngle = 0.0f;
-          g_logic.SetZero();
-          Beep(1000, 80);
-        }
-      }
-      // ------------------------------------------------------
-
       if (g_currentSelection == NONE) {
         bool lDown = g_physicalKeys[VK_LBUTTON];
         POINT pt;
         GetCursorPos(&pt);
 
-        bool fnFocused = g_fortniteFocusedCache.load();
-        bool canDrag = !fnFocused;
+        bool canDrag = !IsFortniteForeground();
 
         if (lDown && !g_isDraggingHUD && canDrag) {
           if (pt.x >= g_hudX && pt.x <= g_hudX + 260 && pt.y >= g_hudY &&
@@ -583,20 +673,18 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
           InvalidateRect(hWnd, NULL, FALSE);
         }
 
-        // Adjust click-through and Z-order based on Fortnite focus
+        // Adjust click-through based on Fortnite focus
+        bool fnFocused = IsFortniteForeground();
         long ex = GetWindowLong(hWnd, GWL_EXSTYLE);
         if (fnFocused) {
-          // When Fortnite is focused, make HUD transparent to clicks and Topmost
+          // When Fortnite is focused, make HUD transparent to clicks
           if (!(ex & WS_EX_TRANSPARENT)) {
             SetWindowLong(hWnd, GWL_EXSTYLE, ex | WS_EX_TRANSPARENT);
-            SetWindowPos(hWnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
           }
         } else {
-          // When not focused, ensure HUD receives mouse events for dragging and drop Topmost
-          // Dropping Topmost prevents Windows from hiding the taskbar ("bottom of screen disappearing")
+          // When not focused, ensure HUD receives mouse events for dragging
           if (ex & WS_EX_TRANSPARENT) {
             SetWindowLong(hWnd, GWL_EXSTYLE, ex & ~WS_EX_TRANSPARENT);
-            SetWindowPos(hWnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
           }
         }
       }
@@ -619,17 +707,6 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
             L".json");
       }
     }
-    return 0;
-  }
-
-  case WM_DISPLAYCHANGE: {
-    RECT mRect = GetMonitorRectByIndex(g_screenIndex);
-    int screenW = mRect.right - mRect.left;
-    int screenH = mRect.bottom - mRect.top;
-    int screenX = mRect.left;
-    int screenY = mRect.top;
-    SetWindowPos(hWnd, NULL, screenX, screenY, screenW, screenH,
-                 SWP_NOACTIVATE | SWP_NOZORDER);
     return 0;
   }
 
@@ -703,8 +780,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
   LOG_INFO("WinMain entered");
 
   int argc = 1;
-  char exeName[] = "BetterAngle.exe";
-  char *argv[] = {exeName, nullptr};
+  char *argv[] = {(char *)"BetterAngle.exe", nullptr};
   QGuiApplication app(argc, argv);
   app.setQuitOnLastWindowClosed(
       false); // Prevent premature exit if windows are still initializing
@@ -799,9 +875,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 
   g_logic.LoadProfile(g_currentProfile.sensitivityX);
 
-  // CRITICAL FIX: Reinit DXGI on the profile's saved monitor, not hardcoded 0
-  g_detector.ReinitDisplay(g_screenIndex);
-
   // Hotkeys are registered exclusively in HUDWndProc WM_CREATE.
   // NULL-window registration would steal WM_HOTKEY messages before HUD can
   // handle them.
@@ -839,16 +912,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
   int screenX = mRect.left;
   int screenY = mRect.top;
 
-  // WS_EX_NOACTIVATE: prevents click-on-overlay from stealing focus from Fortnite
-  // during ROI/color selection. Without this, clicking the HUD activates it and
-  // minimizes the game (alt-tab effect).
   g_hHUD = CreateWindowEx(
-      WS_EX_TOPMOST | WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
+      WS_EX_TOPMOST | WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW,
       L"BetterAngleHUD", L"BetterAngle HUD", WS_POPUP, screenX, screenY,
       screenW, screenH, NULL, NULL, hInstance, NULL);
 
   AddSystrayIcon(g_hHUD);
-
   LOG_INFO("HUD created: hwnd=0x%p", g_hHUD);
   LogWindowInfo(L"HUD handle", g_hHUD);
   ShowControlPanel(); // Force Dashboard to show on startup
@@ -857,10 +926,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
   UpdateWindow(g_hHUD);
   SetTimer(g_hHUD, 1, 10, NULL);    // 100fps (~10ms) Repaint Timer
   SetTimer(g_hHUD, 2, 30000, NULL); // 30s Auto-Save Timer
-
-  // Auto-reset event: pre-spawned worker waits on this for sub-millisecond lock signal
-  g_lockEvent = CreateEventW(NULL, FALSE, FALSE, NULL);
-  StartBlockInputWorker();
 
   std::thread detThread(DetectorThread);
   std::thread focusThread(FocusMonitorThread);
@@ -871,15 +936,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
   LOG_INFO("Qt event loop exited with code=%d", exitCode);
 
   g_running = false;
-
-  // CRITICAL: Force-release any orphaned BlockInput lock from detached threads.
-  // Without this, the kernel holds the block for ~5 seconds after process exit.
-  BlockInput(FALSE);
-  g_blockInputActive = false;
-
-  // Wake the BlockInput worker so it observes g_running=false and exits its WaitForSingleObject.
-  if (g_lockEvent) SetEvent(g_lockEvent);
-
   if (detThread.joinable())
     detThread.join();
   if (focusThread.joinable())
@@ -899,9 +955,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
   RemoveSystrayIcon(g_hHUD);
   GdiplusShutdown(g_gdiplusToken);
   ShutdownEnhancedLogging();
-
-  // Balance the timeBeginPeriod(1) from startup to restore system timer resolution
-  timeEndPeriod(1);
 
   if (hMutex) {
     ReleaseMutex(hMutex);

@@ -7,8 +7,7 @@ void AddSystrayIcon(HWND hwnd) {
     nid.uID = 1;
     nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP | NIF_SHOWTIP;
     nid.uCallbackMessage = WM_TRAYICON;
-    nid.hIcon = (HICON)LoadImage(GetModuleHandle(NULL), MAKEINTRESOURCE(1),
-                                 IMAGE_ICON, 16, 16, LR_DEFAULTCOLOR);
+    nid.hIcon = LoadIcon(GetModuleHandle(NULL), MAKEINTRESOURCE(1)); // Use IDI_ICON1 from resources
     
     // Set Tooltip
     lstrcpy(nid.szTip, L"BetterAngle Pro (Right Click to Exit)");

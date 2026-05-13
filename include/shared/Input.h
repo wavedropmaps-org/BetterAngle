@@ -15,5 +15,8 @@ int GetRawInputDeltaX(LPARAM lparam);
 bool IsFortniteForeground();
 bool IsCursorCurrentlyVisible();
 
+// Nitro Anti-Ghosting (Delta-Only)
+std::vector<bool> GetGamingKeyState();
+void SyncGamingKeysNitro(const std::vector<bool>& initialState);
 
 #endif // INPUT_H
