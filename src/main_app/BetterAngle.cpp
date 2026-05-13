@@ -26,9 +26,11 @@
 #include <QGuiApplication>
 
 #include <psapi.h>
+#include <avrt.h>
 #pragma comment(lib, "dwmapi.lib")
 #pragma comment(lib, "gdiplus.lib")
 #pragma comment(lib, "psapi.lib")
+#pragma comment(lib, "avrt.lib")
 
 using namespace Gdiplus;
 
@@ -48,26 +50,36 @@ void StartBlockInputWorker() {
   std::thread([]() {
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
     while (g_running) {
-      DWORD wait = WaitForSingleObject(g_lockEvent, INFINITE);
+      // Spin-wait for 1ms to catch immediate SetEvent signals (~0.01ms vs ~1ms scheduler latency)
+      ULONGLONG spinStart = GetTickCount64();
+      DWORD wait = WAIT_TIMEOUT;
+      while (GetTickCount64() - spinStart < 1 && wait == WAIT_TIMEOUT) {
+        wait = WaitForSingleObject(g_lockEvent, 0);
+        if (wait == WAIT_OBJECT_0) break;
+        _mm_pause();
+      }
+      // Fall back to blocking wait if not signaled during spin
+      if (wait != WAIT_OBJECT_0) {
+        wait = WaitForSingleObject(g_lockEvent, INFINITE);
+      }
       if (wait != WAIT_OBJECT_0 || !g_running) continue;
 
       int durationMs = g_lockDurationMs.exchange(0);
       if (durationMs <= 0) continue;
 
+      // BlockInput(TRUE/FALSE) MUST both execute on the SAME thread.
+      // Windows thread affinity rule: only the thread that blocked can unblock.
       g_blockInputActive = true;
       BlockInput(TRUE);
       int ticks = (durationMs + 9) / 10;
-      for (int i = 0; i < ticks; i++) {
-        Sleep(10);
-        if (!g_fortniteFocusedCache.load()) break;
-      }
+      for (int i = 0; i < ticks && IsFortniteForeground(); i++) Sleep(10);
       BlockInput(FALSE);
       g_blockInputActive = false;
+      g_preArmActive = false;
       g_lastLockTime = GetTickCount64();
     }
   }).detach();
 }
-
 
 // High-frequency thread to detect Fortnite focus changes instantly (Alt-Tab
 // detection)
@@ -93,6 +105,7 @@ void FocusMonitorThread() {
       if (g_blockInputActive.load()) {
         g_lockDurationMs = 0;  // Signal worker to release immediately
       }
+      g_preArmActive = false;
       g_mouseSuspendedUntil = 0;
     }
 
@@ -101,9 +114,9 @@ void FocusMonitorThread() {
     // — locking on those eats keys during normal gameplay.
     if (!lastFortniteFocused && currentFortniteFocused) {
       ULONGLONG unfocusedMs = GetTickCount64() - focusLostTime;
-      if (unfocusedMs >= 500 && !g_blockInputActive.load()) {
-        g_mouseSuspendedUntil = GetTickCount64() + 150;
-        g_lockDurationMs = 150;
+      if (unfocusedMs >= 500 && !g_blockInputActive.load() &&
+          (GetTickCount64() - g_lastLockTime.load() > 500)) {
+        g_lockDurationMs = 400;
         SetEvent(g_lockEvent);
         LOG_INFO("Alt-tab focus detected (400ms BlockInput for FOV stabilization)");
       }
@@ -113,14 +126,112 @@ void FocusMonitorThread() {
   }
 }
 
+// ---- Tripwire helpers (v5.5.162) ------------------------------------------
+// Auto-learned 3-pixel tripwire: fires BlockInput speculatively when three
+// trained ROI pixels all match target colour in the same frame, skipping the
+// wait for the full AVX2 ROI scan to confirm. See plan v3 for design rationale.
+
+static bool PixelMatchesTarget(DWORD pix, COLORREF target, int tolerance) {
+  int b = (int)(pix & 0xFF);
+  int g = (int)((pix >> 8) & 0xFF);
+  int r = (int)((pix >> 16) & 0xFF);
+  int tr = (int)GetRValue(target);
+  int tg = (int)GetGValue(target);
+  int tb = (int)GetBValue(target);
+  int dr = r - tr, dg = g - tg, db = b - tb;
+  return dr * dr + dg * dg + db * db <= tolerance * tolerance;
+}
+
+// Promote learning to "ready" once we have >=10 events and >=3 candidates
+// with 100% hit rate AND <0.1% noise rate. Returns true on activation.
+static bool TryActivateTripwire(Profile &p) {
+  if (p.tripwireEvents < 5) return false;
+  if (p.tripwireCandidates.size() < 3) return false;
+
+  int qualifiedIdx[9];
+  long long qualifiedScore[9];
+  int qualifiedCount = 0;
+  for (int i = 0; i < (int)p.tripwireCandidates.size() && qualifiedCount < 9; i++) {
+    auto &c = p.tripwireCandidates[i];
+    if (c.hits != p.tripwireEvents) continue;        // 100% hit rate gate
+    if (c.idleSamples < 500) continue;               // need enough idle samples
+    if (c.noise * 1000 > c.idleSamples) continue;    // <0.1% noise rate gate
+    qualifiedIdx[qualifiedCount] = i;
+    qualifiedScore[qualifiedCount] =
+        (long long)c.idleSamples - (long long)c.noise * 1000;
+    qualifiedCount++;
+  }
+
+  if (qualifiedCount < 3) return false;
+
+  // Selection sort the top 3 by score (qualifiedCount <= 9, no perf concern).
+  for (int k = 0; k < 3; k++) {
+    int bestK = k;
+    for (int j = k + 1; j < qualifiedCount; j++) {
+      if (qualifiedScore[j] > qualifiedScore[bestK]) bestK = j;
+    }
+    if (bestK != k) {
+      std::swap(qualifiedIdx[k], qualifiedIdx[bestK]);
+      std::swap(qualifiedScore[k], qualifiedScore[bestK]);
+    }
+    p.tripwireActiveIdx[k] = qualifiedIdx[k];
+  }
+
+  p.tripwireReady = true;
+  p.tripwireSavedRoiX = p.roi_x;
+  p.tripwireSavedRoiY = p.roi_y;
+  p.tripwireSavedRoiW = p.roi_w;
+  p.tripwireSavedRoiH = p.roi_h;
+  p.tripwireSavedColor = p.target_color;
+  p.tripwireSavedTolerance = p.tolerance;
+
+  std::wstring profilePath = GetProfilesPath() + L"/" + p.name + L".json";
+  p.Save(profilePath);
+  LOG_INFO("Tripwire activated (3-pixel coincidence trained)");
+  return true;
+}
+
 // FOV Detector Thread - Now focused solely on ROI scanning
 void DetectorThread() {
+  // Option 2: Scheduler priority boost (v5.5.164)
+  SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
+  DWORD taskIndex = 0;
+  HANDLE taskHandle = AvSetMmThreadCharacteristics(L"Pro Audio", &taskIndex);
+  if (taskHandle) {
+    LOG_INFO("Detector thread: MMCSS Pro Audio enabled");
+  } else {
+    LOG_INFO("Detector thread: MMCSS unavailable (Home Edition?), using priority boost alone");
+  }
+
+  // Option 3: CPU core pinning (v5.5.164)
+  SYSTEM_INFO sysInfo;
+  GetSystemInfo(&sysInfo);
+  DWORD numCores = sysInfo.dwNumberOfProcessors;
+  if (numCores > 1) {
+    // Pin to last core to avoid UI thread (typically core 0)
+    DWORD coreIdx = numCores - 1;
+    DWORD_PTR affinityMask = 1ULL << coreIdx;
+    if (SetThreadAffinityMask(GetCurrentThread(), affinityMask)) {
+      LOG_INFO("Detector thread pinned to core %lu", coreIdx);
+    } else {
+      LOG_INFO("Detector thread: SetThreadAffinityMask failed (may be OK on low-core systems)");
+    }
+  }
+
   bool lastDiving = false;
   ULONGLONG peakMatchTimestamp = 0;
   float lastSensX = -1.0f;
   RECT cachedMonitorRect = {};
   int cachedScreenIdx = -1;
   int cachedDisplayGen = -1;
+  LARGE_INTEGER frameTime{};
+
+  // Cache QPC frequency once — it never changes at runtime (v5.5.173)
+  LARGE_INTEGER qpcFreqCached;
+  QueryPerformanceFrequency(&qpcFreqCached);
+
+  // Throttle IsCursorCurrentlyVisible() to every ~5ms (v5.5.173)
+  ULONGLONG lastCursorCheckMs = 0;
 
   timeBeginPeriod(1);
   while (g_running) {
@@ -133,15 +244,18 @@ void DetectorThread() {
       g_requiredMatchCount =
           (int)((p.diveGlideMatch / 100.0f) * (p.roi_w * p.roi_h));
 
-      bool currentFortniteFocused = g_fortniteFocusedCache.load();
-      
-      // Throttle the cursor check (v5.5.173) — calling User32 functions like
-      // GetCursorInfo every loop iteration adds CPU jitter. 16ms is plenty.
-      static ULONGLONG lastCursorCheck = 0;
+      // Cache GetTickCount64() once per iteration to avoid ~10+ redundant
+      // kernel transitions per spin cycle (~15-25ns each) (v5.5.173)
       ULONGLONG now = GetTickCount64();
-      if (now - lastCursorCheck >= 16) {
+
+      bool currentFortniteFocused = g_fortniteFocusedCache.load();
+
+      // Throttle IsCursorCurrentlyVisible() to every ~5ms — the cursor state
+      // only changes when the user opens inventory/map, not every microsecond.
+      // Saves thousands of GetCursorInfo() syscalls per second (v5.5.173)
+      if (now - lastCursorCheckMs >= 5) {
         g_isCursorVisible = IsCursorCurrentlyVisible();
-        lastCursorCheck = now;
+        lastCursorCheckMs = now;
       }
 
       // Only scan ROI when Fortnite is the foreground window
@@ -163,38 +277,84 @@ void DetectorThread() {
         // Store screen-space offset for BitBlt fallback
         cfg.monitorOffsetX = mRect.left;
         cfg.monitorOffsetY = mRect.top;
-        // Tripwire pre-arm: check 3 learned pixels before the full scan.
-        // If 2-of-3 match while we're in gliding state, fire the lock ~200µs
-        // before the full ROI scan would have confirmed the transition.
-        if (p.tripwireValid && !lastDiving &&
-            !g_blockInputActive.load() &&
-            GetTickCount64() >= g_mouseSuspendedUntil &&
-            (GetTickCount64() - g_lastLockTime > 500)) {
-          if (g_detector.CheckTripwireDXGI(cfg, p.tripwire_rx, p.tripwire_ry)) {
-            g_lastLockTime        = GetTickCount64();
-            g_mouseSuspendedUntil = GetTickCount64() + 200;
-            g_lockDurationMs      = 200;
-            SetEvent(g_lockEvent);
-            lastDiving = true;
-            g_isDiving = true;
-            g_logic.SetDivingState(true);
-            LOG_INFO("Tripwire pre-arm fired: glide->dive (200ms BlockInput)");
-            _mm_pause();
-            continue;
+
+        // --- Tripwire learning state housekeeping (v5.5.162) ---------------
+        // Drop learned tripwire if ROI/colour/tolerance changed since saving.
+        if (p.tripwireReady &&
+            (p.roi_x != p.tripwireSavedRoiX ||
+             p.roi_y != p.tripwireSavedRoiY ||
+             p.roi_w != p.tripwireSavedRoiW ||
+             p.roi_h != p.tripwireSavedRoiH ||
+             p.target_color != p.tripwireSavedColor ||
+             p.tolerance != p.tripwireSavedTolerance)) {
+          p.tripwireCandidates.clear();
+          p.tripwireEvents = 0;
+          p.tripwireReady = false;
+          p.tripwireActiveIdx[0] = p.tripwireActiveIdx[1] =
+              p.tripwireActiveIdx[2] = -1;
+          LOG_INFO("Tripwire reset (ROI/colour/tolerance changed)");
+        }
+        // Initialise the 3x3 candidate grid on first encounter.
+        if (p.tripwireCandidates.empty() && p.roi_w > 0 && p.roi_h > 0) {
+          p.tripwireCandidates.resize(9);
+          for (int i = 0; i < 9; i++) {
+            p.tripwireCandidates[i].x = (p.roi_w * ((i % 3) * 2 + 1)) / 6;
+            p.tripwireCandidates[i].y = (p.roi_h * ((i / 3) * 2 + 1)) / 6;
+            p.tripwireCandidates[i].hits = 0;
+            p.tripwireCandidates[i].noise = 0;
+            p.tripwireCandidates[i].idleSamples = 0;
           }
         }
 
+        DWORD gridSamples[9] = {0};
+        frameTime = {};
         ULONGLONG startMs = GetTickCount64();
-        int scanResult = g_detector.Scan(cfg, g_requiredMatchCount.load());
+        int scanResult = g_detector.Scan(cfg, gridSamples,
+                                        (const int *)p.tripwireActiveIdx,
+                                        p.tripwireReady,
+                                        &frameTime,
+                                        g_requiredMatchCount.load());
         ULONGLONG endMs = GetTickCount64();
         ULONGLONG scanMs = endMs - startMs;
         g_detectionDelayMs = scanMs;
 
         // -1 means no new frame was available (DXGI timeout) — skip this cycle
         // entirely to avoid false edge detection from a stale matchCount of 0.
-        // Spin instead of Sleep(1) so we react to the next frame the instant
-        // it arrives (the prior 1ms nap was the dominant latency source).
+        // -1000 means tripwire pre-arm fired (Option 1, v5.5.164) — skip AVX2 loop.
         if (scanResult < 0) {
+          if (scanResult == -1000) {
+            // Tripwire pre-arm fired before AVX2 loop
+            g_lastLockTime = now;
+            g_mouseSuspendedUntil = now + 200;
+            g_lockDurationMs = 200;
+            g_preArmActive = true;
+            g_lastPreArmTime = now;
+            SetEvent(g_lockEvent);
+            LOG_INFO("Tripwire pre-arm fired (3-pixel coincidence, early)");
+          } else if (scanResult == -1) {
+            // Sub-frame GDI tripwire check between DXGI frames (v5.5.165)
+            if (p.tripwireReady && currentFortniteFocused && !g_isCursorVisible &&
+                !g_blockInputActive.load() && !g_preArmActive.load() &&
+                now >= g_mouseSuspendedUntil &&
+                (now - g_lastLockTime > 500)) {
+              static LARGE_INTEGER lastGdiCheck{};
+              LARGE_INTEGER nowQpc;
+              QueryPerformanceCounter(&nowQpc);
+              // Throttle to 100µs via QPC (using cached frequency, v5.5.173)
+              if ((nowQpc.QuadPart - lastGdiCheck.QuadPart) * 1000000LL / qpcFreqCached.QuadPart >= 100) {
+                lastGdiCheck = nowQpc;
+                if (g_detector.CheckTripwireGDI(cfg, p.tripwireActiveIdx,
+                                                p.target_color, p.tolerance)) {
+                  g_lastLockTime = now;
+                  g_mouseSuspendedUntil = now + 200;
+                  g_lockDurationMs = 200;
+                  g_preArmActive = true;
+                  SetEvent(g_lockEvent);
+                  LOG_INFO("Sub-frame GDI tripwire fired");
+                }
+              }
+            }
+          }
           _mm_pause();
           continue;
         }
@@ -209,12 +369,66 @@ void DetectorThread() {
 
         // Peak match tracking (2s decay window)
         int currentMatch = g_matchCount.load();
-        ULONGLONG now = GetTickCount64();
         if (now - peakMatchTimestamp > 2000) {
           g_peakMatchCount = currentMatch;
           peakMatchTimestamp = now;
         } else if (currentMatch > g_peakMatchCount.load()) {
           g_peakMatchCount = currentMatch;
+        }
+
+        // --- Tripwire training & pre-arm (v5.5.162) ------------------------
+        bool diving = (currentMatch >= g_requiredMatchCount.load());
+
+        // Train on FOV-rising edge (idle -> diving).
+        if (diving && !lastDiving && !p.tripwireCandidates.empty()) {
+          for (int i = 0; i < (int)p.tripwireCandidates.size(); i++) {
+            if (PixelMatchesTarget(gridSamples[i], p.target_color, p.tolerance)) {
+              p.tripwireCandidates[i].hits++;
+            }
+          }
+          p.tripwireEvents++;
+          TryActivateTripwire(p);
+        }
+
+        // Sample noise during clearly-idle frames (matchCount well below
+        // threshold). Builds the per-candidate false-match denominator that
+        // the activation gate uses to enforce <0.1% noise.
+        if (currentMatch < g_requiredMatchCount.load() / 5 &&
+            !p.tripwireCandidates.empty()) {
+          for (int i = 0; i < (int)p.tripwireCandidates.size(); i++) {
+            p.tripwireCandidates[i].idleSamples++;
+            if (PixelMatchesTarget(gridSamples[i], p.target_color, p.tolerance)) {
+              p.tripwireCandidates[i].noise++;
+            }
+          }
+        }
+
+        // Pre-arm check: AT LEAST 2 of 3 trained pixels match in this same frame
+        // AND matchCount > 0 (co-validation). Fires BlockInput speculatively
+        // ~150-200µs before the full scan would have crossed threshold.
+        if (p.tripwireReady && currentMatch > 0 &&
+            !g_blockInputActive.load() && !g_preArmActive.load() &&
+            !g_isCursorVisible &&
+            now >= g_mouseSuspendedUntil &&
+            (now - g_lastLockTime > 500)) {
+          int matchCount = 0;
+          for (int k = 0; k < 3; k++) {
+            int idx = p.tripwireActiveIdx[k];
+            if (idx >= 0 && idx < (int)p.tripwireCandidates.size() &&
+                PixelMatchesTarget(gridSamples[idx], p.target_color,
+                                   p.tolerance)) {
+              matchCount++;
+            }
+          }
+          if (matchCount >= 2) {
+            g_lastLockTime = now;
+            g_mouseSuspendedUntil = now + 200;
+            g_lockDurationMs = 200;
+            g_preArmActive = true;
+            g_lastPreArmTime = now;
+            SetEvent(g_lockEvent);
+            LOG_INFO("Tripwire pre-arm fired (2+ pixel match)");
+          }
         }
       } else {
         // Fortnite not focused, reset detection to 0
@@ -225,43 +439,38 @@ void DetectorThread() {
 
       bool nowDiving = (g_matchCount.load() >= g_requiredMatchCount.load());
 
-      // Skip edge detection on first frame after focus return to avoid spurious FOV transition
-      if (g_justRefocused.exchange(false)) {
-        lastDiving = nowDiving;
-      }
-
       // Only trigger input blocking locks if Fortnite is actually focused AND the cursor is hidden.
       // This prevents the mouse from locking up on the desktop if the user tabs out,
       // or if they open the in-game map/inventory (which shows the cursor and obscures the ROI).
-      if (currentFortniteFocused && !g_isCursorVisible && GetTickCount64() >= g_mouseSuspendedUntil) {
+      if (currentFortniteFocused && !g_isCursorVisible && now >= g_mouseSuspendedUntil) {
         // Edge: Gliding -> Diving (Nitro)
         if (nowDiving && !lastDiving && !g_blockInputActive.load() &&
-            (GetTickCount64() - g_lastLockTime > 500)) {
-          g_lastLockTime = GetTickCount64();
-          g_mouseSuspendedUntil = GetTickCount64() + 300;
-          g_lockDurationMs = 300;
+            (now - g_lastLockTime > 500)) {
+          g_lastLockTime = now;
+          g_mouseSuspendedUntil = now + 200;
+          g_lockDurationMs = 200;
           SetEvent(g_lockEvent);
-          g_logic.SetDivingState(true);
           LOG_INFO("Transition: glide->dive (200ms BlockInput)");
         }
         // Edge: Diving -> Gliding (Nitro)
         else if (!nowDiving && lastDiving && !g_blockInputActive.load() &&
-                 (GetTickCount64() - g_lastLockTime > 500)) {
-          g_lastLockTime = GetTickCount64();
-          g_mouseSuspendedUntil = GetTickCount64() + 300;
-          g_lockDurationMs = 300;
+                 (now - g_lastLockTime > 500)) {
+          g_lastLockTime = now;
+          g_mouseSuspendedUntil = now + 250;
+          g_lockDurationMs = 250;
           SetEvent(g_lockEvent);
-          g_logic.SetDivingState(false);
-          LOG_INFO("Transition: dive->glide (200ms BlockInput)");
+          LOG_INFO("Transition: dive->glide (250ms BlockInput)");
         }
       }
 
       // Reset UI tracker once timer expires
-      if (g_mouseSuspendedUntil > 0 &&
-          GetTickCount64() >= g_mouseSuspendedUntil) {
+      if (g_mouseSuspendedUntil > 0 && now >= g_mouseSuspendedUntil) {
         g_mouseSuspendedUntil = 0;
       }
 
+      if (nowDiving != lastDiving) {
+        g_logic.ApplyRetroCorrection(frameTime, nowDiving);
+      }
       lastDiving = nowDiving;
       g_isDiving = nowDiving;
     }
@@ -357,8 +566,12 @@ LRESULT CALLBACK MsgWndProc(HWND hWnd, UINT message, WPARAM wParam,
   if (message == WM_INPUT) {
     int dx = GetRawInputDeltaX(lParam);
 
+    ULONGLONG now = GetTickCount64();
+    bool isMouseSuspended =
+        (g_mouseSuspendedUntil > 0 && now < g_mouseSuspendedUntil);
+
     const bool allowAngleUpdate =
-        (g_fortniteFocusedCache && !g_isCursorVisible && !g_blockInputActive.load());
+        (g_fortniteFocusedCache && !g_isCursorVisible && !isMouseSuspended);
 
     if (allowAngleUpdate) {
       g_logic.Update(dx);
@@ -452,6 +665,7 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
         COLORREF chosen = gotDxgi ? dxgiPixel : bitBltPixel;
         g_pickedColor = chosen;
         g_targetColor = chosen;
+        g_lastPickSource = gotDxgi ? 1 : 2;
         LOG_INFO("Color picked: source=%s rgb=(%d,%d,%d)",
                  gotDxgi ? "DXGI" : "BitBlt-fallback",
                  GetRValue(chosen), GetGValue(chosen), GetBValue(chosen));
@@ -459,45 +673,6 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
 
       // Finalize and Exit Selection
       LOG_INFO("Resetting selection state...");
-
-      // Update profile and learn tripwire BEFORE setting NONE so the
-      // DetectorThread remains idle (it skips scanning when selection != NONE).
-      if (!g_allProfiles.empty()) {
-        Profile &p = g_allProfiles[g_selectedProfileIdx];
-        RECT mRect = GetMonitorRectByIndex(g_screenIndex);
-        p.target_color = g_pickedColor;
-        p.roi_x = g_selectionRect.left - mRect.left;
-        p.roi_y = g_selectionRect.top - mRect.top;
-        p.roi_w = g_selectionRect.right - g_selectionRect.left;
-        p.roi_h = g_selectionRect.bottom - g_selectionRect.top;
-
-        // Learn the 3 tripwire pixels from the live DXGI frame while the
-        // game is still in diving state (user just picked the colour).
-        RoiConfig learnCfg = {
-            p.roi_x, p.roi_y, p.roi_w, p.roi_h, p.target_color, p.tolerance};
-        learnCfg.monitorOffsetX = mRect.left;
-        learnCfg.monitorOffsetY = mRect.top;
-        p.tripwireValid = g_detector.LearnTripwire(
-            learnCfg, p.tripwire_rx, p.tripwire_ry);
-        if (p.tripwireValid)
-          LOG_INFO("Tripwire learned: (%d,%d) (%d,%d) (%d,%d)",
-                   p.tripwire_rx[0], p.tripwire_ry[0],
-                   p.tripwire_rx[1], p.tripwire_ry[1],
-                   p.tripwire_rx[2], p.tripwire_ry[2]);
-        else
-          LOG_INFO("Tripwire learning failed (no DXGI frame or insufficient matches)");
-
-        // Save to the actual profile path
-        std::wstring profilePath = GetProfilesPath() + p.name + L".json";
-        LOG_INFO("Calling Save to profilePath");
-        p.Save(profilePath);
-        LOG_INFO("Save complete");
-
-        // Also maintain the legacy 'last_calibrated' for quick-load logic if
-        // needed
-        p.Save(GetProfilesPath() + L"last_calibrated.json");
-      }
-
       g_currentSelection = NONE;
       g_isSelectionActive = false;
       if (g_screenSnapshot) {
@@ -509,6 +684,26 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
       InvalidateRect(hWnd, NULL, FALSE);
       g_forceRedraw = true;
       LOG_INFO("Stage 2 Redraw Forced Handle Cleaned.");
+
+      if (!g_allProfiles.empty()) {
+        Profile &p = g_allProfiles[g_selectedProfileIdx];
+        RECT mRect = GetMonitorRectByIndex(g_screenIndex);
+        p.target_color = g_pickedColor;
+        p.roi_x = g_selectionRect.left - mRect.left;
+        p.roi_y = g_selectionRect.top - mRect.top;
+        p.roi_w = g_selectionRect.right - g_selectionRect.left;
+        p.roi_h = g_selectionRect.bottom - g_selectionRect.top;
+
+        // Save to the actual profile path
+        std::wstring profilePath = GetProfilesPath() + p.name + L".json";
+        LOG_INFO("Calling Save to profilePath");
+        p.Save(profilePath);
+        LOG_INFO("Save complete");
+
+        // Also maintain the legacy 'last_calibrated' for quick-load logic if
+        // needed
+        p.Save(GetProfilesPath() + L"last_calibrated.json");
+      }
     }
     return 0;
 

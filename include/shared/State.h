@@ -34,7 +34,7 @@ extern std::string g_lastVersionRun;
 #ifndef V_MAJ
 #define V_MAJ 5
 #define V_MIN 5
-#define V_PAT 230
+#define V_PAT 181
 #endif
 
 #define VERSION_STR APP_STR_Y(V_MAJ) "." APP_STR_Y(V_MIN) "." APP_STR_Y(V_PAT)
@@ -89,7 +89,6 @@ extern RECT g_selectionRect;
 extern POINT g_startPoint;
 extern std::string g_latestVersionOnline;
 extern float g_currentAngle;
-extern std::atomic<int> g_hudDecimalPlaces; // 1 or 2 decimal places for angle HUD
 extern std::atomic<bool> g_isCursorVisible;
 extern AngleLogic g_logic;
 extern int g_hudX;
@@ -105,7 +104,6 @@ bool RefreshHotkeys(HWND hWnd);
 extern std::atomic<bool> g_forceRedraw;
 extern std::atomic<bool> g_keybindAssignmentActive;
 extern std::atomic<bool> g_blockInputActive;
-extern std::atomic<bool> g_justRefocused;
 
 // Pre-spawned BlockInput worker ? eliminates ~5-20ms thread-creation latency
 // on FOV transitions. Detector signals g_lockEvent; worker wakes and locks input.
@@ -116,6 +114,19 @@ void StartBlockInputWorker();
 // Bumped on every WM_DISPLAYCHANGE so DetectorThread can invalidate its cached
 // monitor rect when virtual-desktop layout shifts (e.g. user hot-plugs a 2nd monitor).
 extern std::atomic<int> g_displayChangeGen;
+
+// Debug overlay diagnostics for the capture path:
+//   g_lastScanUsedDxgi: true if the most recent Scan ran the DXGI path
+//   g_lastPickSource:   0 = no pick yet, 1 = DXGI, 2 = BitBlt fallback
+extern std::atomic<bool> g_lastScanUsedDxgi;
+extern std::atomic<int>  g_lastPickSource;
+
+// Tripwire pre-arm state (v5.5.162). True between the moment the 3-pixel
+// tripwire fires speculatively and the moment BlockInput auto-releases.
+// Used by debug overlay to show "ARMED" indicator.
+extern std::atomic<bool> g_preArmActive;
+// Wall-clock ms of the last pre-arm fire (for fading the ARMED indicator).
+extern std::atomic<ULONGLONG> g_lastPreArmTime;
 
 void NotifyBackendCrosshairChanged();
 void NotifyBackendUpdateStatusChanged();

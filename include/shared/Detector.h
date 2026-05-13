@@ -17,7 +17,16 @@ class FovDetector {
 public:
   FovDetector();
   ~FovDetector();
-  int Scan(const RoiConfig &cfg, int earlyExitThreshold = 0);
+  // outGridSamples (optional, length 9): 3x3 grid of cell-centre BGRA pixels
+  // sampled inside the ROI. Used by the tripwire learner. If null, skipped.
+  // tripwireActiveIdx: if non-null, checks if all 3 pixels (at these indices)
+  // match target colour; if so, returns -1000 (skip AVX2, pre-arm fires early).
+  // outFrameTime (optional): filled with DXGI LastPresentTime if DXGI path succeeds;
+  // set to {0} if BitBlt fallback. Used for retroactive angle correction.
+  int Scan(const RoiConfig &cfg, DWORD *outGridSamples = nullptr,
+           const int *tripwireActiveIdx = nullptr, bool tripwireReady = false,
+           LARGE_INTEGER *outFrameTime = nullptr,
+           int earlyExitThreshold = 0);
 
   // Reinit the DXGI duplication for the given monitor index. Strict — if the
   // monitor's output isn't reachable from this adapter, m_dxgiOk stays false
@@ -32,16 +41,12 @@ public:
   // caller should fall back to BitBlt.
   bool SamplePixelDXGI(int monX, int monY, COLORREF &outColor);
 
-  // Learn 3 tripwire pixel positions from the current DXGI frame: one matching
-  // pixel per horizontal third of the ROI. Writes ROI-relative offsets into
-  // rx[3] and ry[3]. Returns true if at least 2 thirds contained a match.
-  // Call once after calibration completes (while DetectorThread is idle).
-  bool LearnTripwire(const RoiConfig &cfg, int rx[3], int ry[3]);
-
-  // Fast pre-arm check: reads the 3 learned pixels via 1×1 GPU copies and
-  // returns true if 2-of-3 match the target colour. Acquires and releases its
-  // own DXGI frame — do not call while Scan() is in flight on the same thread.
-  bool CheckTripwireDXGI(const RoiConfig &cfg, const int rx[3], const int ry[3]);
+  // Sub-frame tripwire check via GetPixel(). Samples the 3 pixels at
+  // tripwireActiveIdx positions using GDI. Returns true if all 3 match target
+  // colour within tolerance. Called between DXGI frames to detect mid-frame FOV changes.
+  bool CheckTripwireGDI(const RoiConfig &cfg,
+                        const int *tripwireActiveIdx,
+                        COLORREF target, int tolerance);
 
 private:
   // DXGI path
@@ -49,9 +54,12 @@ private:
   ID3D11DeviceContext    *m_d3dCtx      = nullptr;
   IDXGIOutputDuplication *m_duplication = nullptr;
   ID3D11Texture2D        *m_stagingTex  = nullptr;
-  ID3D11Texture2D        *m_twStagingTex = nullptr; // Reusable 1×1 texture for tripwire reads
   int  m_stagingW = 0, m_stagingH = 0;
   bool m_dxgiOk   = false;
+
+  // 3×1 staging texture for Phase 1 tripwire check (holds exactly 3 pixels).
+  // Allocated once after DXGI init; released in ReleaseDXGI().
+  ID3D11Texture2D *m_tripwireStagingTex = nullptr;
 
   // BitBlt fallback path
   HDC     m_hdcScreen = NULL;
@@ -64,7 +72,10 @@ private:
   void ReleaseDXGI();
   void EnsureScreenDC();
   void EnsureResources(int w, int h);
-  int  ScanBitBlt(const RoiConfig &cfg, int earlyExitThreshold = 0);
+  int  ScanBitBlt(const RoiConfig &cfg, DWORD *outGridSamples = nullptr,
+                  const int *tripwireActiveIdx = nullptr, bool tripwireReady = false,
+                  LARGE_INTEGER *outFrameTime = nullptr,
+                  int earlyExitThreshold = 0);
 };
 
 #endif // DETECTOR_H

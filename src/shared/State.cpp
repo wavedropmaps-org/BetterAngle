@@ -205,7 +205,6 @@ POINT g_startPoint = {0};
 
 std::string g_latestVersionOnline = "v" VERSION_STR;
 float g_currentAngle = 0.0f;
-std::atomic<int> g_hudDecimalPlaces{1}; // Default: 1 decimal place
 std::atomic<bool> g_isCursorVisible(false);
 AngleLogic g_logic(0.05);
 
@@ -220,10 +219,13 @@ HWND g_hMsgWnd = NULL;
 HWND g_fortniteWindow = NULL;
 RECT g_fortniteRect = {0, 0, 0, 0};
 std::atomic<bool> g_blockInputActive(false);
-std::atomic<bool> g_justRefocused(false);
 HANDLE g_lockEvent = NULL;
 std::atomic<int> g_lockDurationMs(0);
 std::atomic<int> g_displayChangeGen(0);
+std::atomic<bool> g_lastScanUsedDxgi(false);
+std::atomic<int>  g_lastPickSource(0);
+std::atomic<bool> g_preArmActive(false);
+std::atomic<ULONGLONG> g_lastPreArmTime(0);
 
 RECT GetMonitorRectByIndex(int index) {
   struct RectData {

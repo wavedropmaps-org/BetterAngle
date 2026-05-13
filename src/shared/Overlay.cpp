@@ -3,7 +3,6 @@
 #include "shared/Input.h"
 #include "shared/Logic.h"
 #include "shared/State.h"
-#include <cmath>
 #include <gdiplus.h>
 #include <iomanip>
 #include <iostream>
@@ -429,64 +428,19 @@ void DrawOverlay(HWND hwnd, double angle, bool showCrosshair) {
                         RectF(float(rx), float(ry + 8), float(rw), 18.0f),
                         s_fmtCenter, s_labelBrush);
 
-    // Angle text — colour-coded segments for quick readability.
-    // Whole number = Green, 1st decimal = Cyan, 2nd decimal = Yellow.
+    // Angle text — L"\xB0" is the degree symbol (safe ASCII escape)
     double dispAngle = std::abs(angle);
-    int decimals = g_hudDecimalPlaces.load();
-    long long factor = (decimals == 2) ? 100LL : 10LL;
+    double roundedAngle = std::round(dispAngle * 10.0) / 10.0;
+    if (roundedAngle >= 360.0)
+      roundedAngle -= 360.0;
+    std::wstring angleStr = FmtFloat(roundedAngle, 1) + L"\xB0";
+    Color angleCol =
+        g_isDiving ? Color(255, 0, 220, 255) : Color(255, 0, 210, 140);
+    SolidBrush angleBrush(angleCol);
 
-    // Convert to a scaled integer once to avoid floating-point truncation
-    // errors when extracting individual decimal digits via % and /.
-    long long ival = llround(dispAngle * (double)factor);
-    if (ival >= 360LL * factor) ival -= 360LL * factor;
-
-    int wholePart = (int)(ival / factor);
-    int dec1 = (decimals == 2) ? (int)((ival / 10LL) % 10LL)
-                                : (int)(ival % 10LL);
-    int dec2 = (int)(ival % 10LL);
-
-    // Build segment strings
-    std::wstring wholeStr = std::to_wstring(wholePart) + L".";
-    std::wstring dec1Str = std::to_wstring(dec1);
-    std::wstring dec2Str = (decimals == 2) ? std::to_wstring(dec2) : L"";
-    std::wstring degStr = L"\xB0";
-
-    // Colour definitions (bright, easily distinguishable)
-    SolidBrush greenBrush(Color(255, 100, 220, 100));  // Whole number
-    SolidBrush cyanBrush(Color(255, 0, 220, 255));     // 1st decimal
-    SolidBrush yellowBrush(Color(255, 255, 220, 50));   // 2nd decimal
-    SolidBrush degBrush(Color(180, 200, 200, 200));     // Degree symbol
-
-    Font *useFont = s_angleFont;
-
-    // GenericTypographic eliminates GDI+ internal per-segment padding so
-    // back-to-back DrawString calls don't accumulate gaps between segments.
-    const StringFormat *sfTypo = StringFormat::GenericTypographic();
-
-    // Measure total width for centering (measure the full string as one unit)
-    std::wstring fullAngleStr = wholeStr + dec1Str + (decimals == 2 ? dec2Str : L"") + degStr;
-    RectF mTotal;
-    graphics.MeasureString(fullAngleStr.c_str(), -1, useFont, PointF(0, 0), sfTypo, &mTotal);
-
-    RectF mWhole, mDec1, mDec2, mDeg;
-    graphics.MeasureString(wholeStr.c_str(), -1, useFont, PointF(0, 0), sfTypo, &mWhole);
-    graphics.MeasureString(dec1Str.c_str(), -1, useFont, PointF(0, 0), sfTypo, &mDec1);
-    if (decimals == 2)
-      graphics.MeasureString(dec2Str.c_str(), -1, useFont, PointF(0, 0), sfTypo, &mDec2);
-    graphics.MeasureString(degStr.c_str(), -1, useFont, PointF(0, 0), sfTypo, &mDeg);
-
-    float startX = float(rx) + (float(rw) - mTotal.Width) / 2.0f;
-    float textY = float(ry + 30);
-
-    graphics.DrawString(wholeStr.c_str(), -1, useFont, PointF(startX, textY), sfTypo, &greenBrush);
-    startX += mWhole.Width;
-    graphics.DrawString(dec1Str.c_str(), -1, useFont, PointF(startX, textY), sfTypo, &cyanBrush);
-    startX += mDec1.Width;
-    if (decimals == 2) {
-      graphics.DrawString(dec2Str.c_str(), -1, useFont, PointF(startX, textY), sfTypo, &yellowBrush);
-      startX += mDec2.Width;
-    }
-    graphics.DrawString(degStr.c_str(), -1, useFont, PointF(startX, textY), sfTypo, &degBrush);
+    graphics.DrawString(angleStr.c_str(), -1, s_angleFont,
+                        RectF(float(rx), float(ry + 26), float(rw), 80.0f),
+                        s_fmtAngle, &angleBrush);
 
     // Match % label
     int matchCount = g_matchCount.load();
@@ -617,6 +571,42 @@ void DrawOverlay(HWND hwnd, double angle, bool showCrosshair) {
               g_scannerCpuPct.load() < 50);
 
       DrawRow(7, 1, L"Version:", L"v" + std::wstring(VERSION_WSTR), true);
+
+      // Capture-path diagnostics (added v5.5.157). Helps verify DXGI is
+      // actually active and the picker stored the right byte.
+      bool dxgiActive = g_lastScanUsedDxgi.load();
+      DrawRow(0, 1, L"Capture Path:",
+              dxgiActive ? L"DXGI" : L"BitBlt", dxgiActive);
+
+      int pickSrc = g_lastPickSource.load();
+      const wchar_t *pickStr = (pickSrc == 1) ? L"DXGI"
+                              : (pickSrc == 2) ? L"BitBlt"
+                                               : L"-";
+      DrawRow(1, 1, L"Pick Source:", pickStr, pickSrc == 1);
+
+      COLORREF pc = g_pickedColor;
+      std::wstring rgbStr = L"(" + std::to_wstring(GetRValue(pc)) + L"," +
+                            std::to_wstring(GetGValue(pc)) + L"," +
+                            std::to_wstring(GetBValue(pc)) + L")";
+      DrawRow(2, 1, L"Picked RGB:", rgbStr);
+
+      // Tripwire status (v5.5.162). ARMED flashes for 250ms after a pre-arm
+      // fire so the user can see it light up. READY = trained + persisted.
+      // LEARNING shows progress until 10 events + 3 qualified candidates.
+      std::wstring tripStr;
+      bool tripGood = false;
+      ULONGLONG sinceArm = GetTickCount64() - g_lastPreArmTime.load();
+      if (g_preArmActive.load() || sinceArm < 250) {
+        tripStr = L"ARMED";
+        tripGood = true;
+      } else if (dbgP.tripwireReady) {
+        tripStr = L"READY (3 px)";
+        tripGood = true;
+      } else {
+        tripStr = L"LEARNING " +
+                  std::to_wstring(dbgP.tripwireEvents) + L"/10";
+      }
+      DrawRow(3, 1, L"Tripwire:", tripStr, tripGood);
     }
   }
 

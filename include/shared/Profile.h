@@ -26,6 +26,17 @@ struct CrosshairPreset {
   bool pulse;
 };
 
+// Auto-learned tripwire — see Plan v3 (v5.5.162). Three top-scoring grid
+// candidates that consistently match target on FOV-rising-edges and stay
+// quiet during idle. When all three match in a single frame, we pre-arm
+// BlockInput without waiting for the full ROI scan to confirm.
+struct TripwireSample {
+  int x = 0, y = 0;     // ROI-relative pixel coords
+  int hits = 0;         // # of FOV-rising-edges where this pixel matched target
+  int noise = 0;        // # of idle frames where this pixel falsely matched target
+  int idleSamples = 0;  // # of idle frames sampled (denominator for noise rate)
+};
+
 struct Profile {
   std::wstring name;
   double sensitivityX = 0.05;
@@ -56,11 +67,18 @@ struct Profile {
   Keybinds keybinds;
   std::vector<CrosshairPreset> crosshairPresets;
 
-  // Tripwire pre-arm: 3 learned pixel positions (ROI-relative) that are
-  // checked before the full scan to fire the lock signal ~200µs earlier.
-  int  tripwire_rx[3]  = {0, 0, 0};
-  int  tripwire_ry[3]  = {0, 0, 0};
-  bool tripwireValid   = false;
+  // Tripwire learning state (persisted)
+  std::vector<TripwireSample> tripwireCandidates;  // 9-entry 3x3 grid during learning
+  int tripwireEvents = 0;
+  bool tripwireReady = false;
+  int tripwireActiveIdx[3] = {-1, -1, -1};
+  // Snapshot of ROI/colour/tolerance at activation time. If any of these change
+  // we drop the learned tripwire and re-learn (the learned pixels would otherwise
+  // point at the wrong place / wrong colour).
+  int tripwireSavedRoiX = 0, tripwireSavedRoiY = 0;
+  int tripwireSavedRoiW = 0, tripwireSavedRoiH = 0;
+  COLORREF tripwireSavedColor = 0;
+  int tripwireSavedTolerance = 0;
 
   bool Load(const std::wstring &path);
   bool Save(const std::wstring &path);

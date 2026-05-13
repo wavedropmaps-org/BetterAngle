@@ -214,17 +214,6 @@ QStringList BetterAngleBackend::availableScreens() const {
   return data.names;
 }
 
-int BetterAngleBackend::hudDecimalPlaces() const {
-  return g_hudDecimalPlaces.load();
-}
-
-void BetterAngleBackend::setHudDecimalPlaces(int v) {
-  if (v < 1) v = 1;
-  if (v > 2) v = 2;
-  g_hudDecimalPlaces = v;
-  emit profileChanged();
-}
-
 bool BetterAngleBackend::crosshairOn() const { return g_showCrosshair; }
 void BetterAngleBackend::setCrosshairOn(bool v) {
   g_showCrosshair = v;
