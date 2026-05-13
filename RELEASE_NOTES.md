@@ -1,3 +1,6 @@
+### BetterAngle Pro v5.5.254
+- Automated build release.
+
 ### BetterAngle Pro v5.5.253
 - **Feature: Hardware-Direct Input Engine**. Replaced virtual key simulation with raw hardware scancode injection (W: 0x11, A: 0x1E, S: 0x1F, D: 0x20) for improved input fidelity and reduced OS processing overhead.
 - **UI: Direct Hardware Input Toggle**. Added new "Engine" tab in Dashboard with toggle to enable/disable direct hardware mode per profile.
