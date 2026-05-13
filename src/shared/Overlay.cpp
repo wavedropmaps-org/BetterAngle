@@ -119,7 +119,14 @@ void DrawOverlay(HWND hwnd, double angle, bool showCrosshair) {
   if (g_screenSnapshot && g_currentSelection != NONE) {
     HDC hdcSnap = CreateCompatibleDC(hdcMem);
     HGDIOBJ hOldSnap = SelectObject(hdcSnap, g_screenSnapshot);
-    BitBlt(hdcMem, 0, 0, sw, sh, hdcSnap, 0, 0, SRCCOPY);
+    
+    // Multi-Monitor Pro Fix: CaptureDesktop gets the entire virtual desktop.
+    // To render the correct monitor's slice, offset by mRect - virX/virY.
+    int virX = GetSystemMetrics(SM_XVIRTUALSCREEN);
+    int virY = GetSystemMetrics(SM_YVIRTUALSCREEN);
+    RECT mRect = GetMonitorRectByIndex(g_screenIndex);
+    BitBlt(hdcMem, 0, 0, sw, sh, hdcSnap, mRect.left - virX, mRect.top - virY, SRCCOPY);
+    
     SelectObject(hdcSnap, hOldSnap);
     DeleteDC(hdcSnap);
 
@@ -659,6 +666,16 @@ void DrawOverlay(HWND hwnd, double angle, bool showCrosshair) {
               g_blockInputActive ? L"LOCKED" : L"UNLOCKED",
               !g_blockInputActive);
       DrawRow(15, 1, L"Version:", L"v" + std::wstring(VERSION_WSTR), true);
+
+      // Capture-path diagnostics (ported from v5.5.157).
+      // This build uses scalar BitBlt only (no DXGI).
+      DrawRow(16, 1, L"Capture Path:", L"BitBlt", true);
+
+      COLORREF pc = g_targetColor;
+      std::wstring rgbStr = L"(" + std::to_wstring(GetRValue(pc)) + L"," +
+                            std::to_wstring(GetGValue(pc)) + L"," +
+                            std::to_wstring(GetBValue(pc)) + L")";
+      DrawRow(17, 1, L"Target RGB:", rgbStr);
     }
   }
 

@@ -2,6 +2,7 @@
 #include <atomic>
 #include <cmath>
 #include <dwmapi.h>
+#include <emmintrin.h> // SSE2: _mm_pause for zero-latency spin-wait
 #include <fstream>
 #include <gdiplus.h>
 #include <iostream>
@@ -94,10 +95,10 @@ void FocusMonitorThread() {
         g_lockInProgress = false;
       }).detach();
 
-      LOG_INFO("Alt-tab cooldown active (400ms BlockInput + Nitro sync)");
+      LOG_INFO("Alt-tab cooldown active (200ms BlockInput + Nitro sync)");
     }
     lastFortniteFocused = currentFortniteFocused;
-    Sleep(0); // Max CPU performance for lightning fast focus detection
+    _mm_pause(); // Zero-latency spin-wait (nanosecond response)
   }
 }
 
@@ -105,6 +106,9 @@ void FocusMonitorThread() {
 void DetectorThread() {
   bool lastDiving = false;
   ULONGLONG peakMatchTimestamp = 0;
+  RECT cachedMonitorRect = {};
+  int cachedScreenIdx = -1;
+  int cachedDisplayGen = -1;
 
   while (g_running) {
     if (!g_allProfiles.empty() && g_currentSelection == NONE) {
@@ -118,7 +122,13 @@ void DetectorThread() {
 
       // Only scan ROI when Fortnite is the foreground window
       if (currentFortniteFocused) {
-        RECT mRect = GetMonitorRectByIndex(g_screenIndex);
+        int curDisplayGen = g_displayChangeGen.load();
+        if (g_screenIndex != cachedScreenIdx || curDisplayGen != cachedDisplayGen) {
+          cachedMonitorRect = GetMonitorRectByIndex(g_screenIndex);
+          cachedScreenIdx = g_screenIndex;
+          cachedDisplayGen = curDisplayGen;
+        }
+        RECT mRect = cachedMonitorRect;
         RoiConfig cfg = {
             p.roi_x + mRect.left, p.roi_y + mRect.top, p.roi_w, p.roi_h,
             p.target_color,       p.tolerance};
@@ -243,7 +253,7 @@ void DetectorThread() {
       g_isDiving = nowDiving;
       g_logic.SetDivingState(nowDiving);
     }
-    Sleep(1); // CPU Fix: Drops usage from 100% to ~1%
+    _mm_pause(); // Zero-latency spin-wait (nanosecond response)
   }
 }
 
@@ -707,6 +717,38 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
             L".json");
       }
     }
+    return 0;
+  }
+
+  // Multi-Monitor Hot-Plug Detection (ported from v5.5.153)
+  // When a monitor is plugged in or unplugged, Windows sends WM_DISPLAYCHANGE.
+  // We auto-track Fortnite's monitor and resize the overlay to match.
+  case WM_DISPLAYCHANGE: {
+    // Auto-track Fortnite's monitor: hot-plugging a 2nd monitor can renumber
+    // monitor indices. Find Fortnite's current monitor and update g_screenIndex.
+    HWND fnWnd = FindWindowW(NULL, L"Fortnite  ");
+    if (!fnWnd) fnWnd = FindWindowW(NULL, L"Fortnite");
+    if (fnWnd && IsWindow(fnWnd)) {
+      HMONITOR hFnMon = MonitorFromWindow(fnWnd, MONITOR_DEFAULTTONEAREST);
+      struct FindData { HMONITOR target; int currentIndex; int foundIndex; };
+      FindData data = {hFnMon, 0, -1};
+      EnumDisplayMonitors(NULL, NULL,
+        [](HMONITOR h, HDC, LPRECT, LPARAM dwData) -> BOOL {
+          auto *d = reinterpret_cast<FindData *>(dwData);
+          if (h == d->target) { d->foundIndex = d->currentIndex; return FALSE; }
+          d->currentIndex++;
+          return TRUE;
+        },
+        reinterpret_cast<LPARAM>(&data));
+      if (data.foundIndex >= 0) g_screenIndex = data.foundIndex;
+    }
+
+    RECT mRect = GetMonitorRectByIndex(g_screenIndex);
+    int screenW = mRect.right - mRect.left;
+    int screenH = mRect.bottom - mRect.top;
+    SetWindowPos(hWnd, HWND_TOPMOST, mRect.left, mRect.top, screenW, screenH,
+                 SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    InvalidateRect(hWnd, NULL, FALSE);
     return 0;
   }
 
