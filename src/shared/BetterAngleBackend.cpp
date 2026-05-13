@@ -243,6 +243,25 @@ void BetterAngleBackend::setAtomicShield(bool v) {
   emit profileChanged();
 }
 
+bool BetterAngleBackend::directHardwareMode() const {
+  if (g_allProfiles.empty())
+    return g_directHardwareModeEnabled.load();
+  return g_allProfiles[g_selectedProfileIdx].directHardwareMode;
+}
+
+void BetterAngleBackend::setDirectHardwareMode(bool v) {
+  g_directHardwareModeEnabled.store(v, std::memory_order_release);
+
+  if (!g_allProfiles.empty()) {
+    Profile &p = g_allProfiles[g_selectedProfileIdx];
+    p.directHardwareMode = v;
+    p.Save(GetProfilesPath() + p.name + L".json");
+  }
+
+  SaveSettings();
+  emit profileChanged();
+}
+
 bool BetterAngleBackend::crosshairOn() const { return g_showCrosshair; }
 void BetterAngleBackend::setCrosshairOn(bool v) {
   g_showCrosshair = v;

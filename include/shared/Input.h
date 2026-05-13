@@ -15,4 +15,8 @@ int GetRawInputDeltaX(LPARAM lparam);
 bool IsFortniteForeground();
 bool IsCursorCurrentlyVisible();
 
+// Hardware-direct scancode injection (v5.5.252)
+void SendHardwareKey(BYTE scancode, bool pressed);
+void SendDirectMovement(char direction, bool pressed);
+
 #endif // INPUT_H

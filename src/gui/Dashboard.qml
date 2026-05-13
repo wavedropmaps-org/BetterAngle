@@ -44,6 +44,11 @@ Item {
             contentItem: Text { text: parent.text; color: parent.checked ? "#00ffcc" : "#888"; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
             background: Rectangle { color: parent.checked ? "#1a1a2e" : "transparent" }
         }
+        TabButton {
+            text: qsTr("ENGINE")
+            contentItem: Text { text: parent.text; color: parent.checked ? "#00ffcc" : "#888"; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+            background: Rectangle { color: parent.checked ? "#1a1a2e" : "transparent" }
+        }
     }
 
     StackLayout {
@@ -1304,6 +1309,47 @@ Item {
                     Text {
                         text: "ROI Cancel: Press ROI key or Esc when in selection stages."
                         color: "#aaa"; font.pixelSize: 11; width: parent.width; wrapMode: Text.WordWrap
+                    }
+                }
+            }
+        }
+
+        // ─── ENGINE ────────────────────────────────────────────────
+        Rectangle {
+            color: "#0d0d12"
+            Column {
+                anchors { fill: parent; margins: 20 }
+                spacing: 15
+
+                Text {
+                    text: "Engine Settings"
+                    color: "white"
+                    font.pixelSize: 18
+                    font.bold: true
+                }
+
+                RowLayout {
+                    spacing: 10
+                    Switch {
+                        id: hardwareSwitch
+                        checked: backend.directHardwareMode
+                        onCheckedChanged: backend.directHardwareMode = checked
+                        Connections {
+                            target: backend
+                            onProfileChanged: hardwareSwitch.checked = backend.directHardwareMode
+                        }
+                    }
+                    Column {
+                        Text {
+                            text: "Direct Hardware Input"
+                            color: "white"
+                            font.pixelSize: 13
+                        }
+                        Text {
+                            text: "Use raw hardware scancodes for improved input fidelity"
+                            color: "#666"
+                            font.pixelSize: 11
+                        }
                     }
                 }
             }

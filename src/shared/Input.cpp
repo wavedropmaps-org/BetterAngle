@@ -197,4 +197,59 @@ int GetRawInputDeltaX(LPARAM lparam) {
   return 0;
 }
 
+// Hardware-direct scancode injection (Movement Cluster)
+static const BYTE SCANCODE_W = 0x11;
+static const BYTE SCANCODE_A = 0x1E;
+static const BYTE SCANCODE_S = 0x1F;
+static const BYTE SCANCODE_D = 0x20;
+
+void SendHardwareKey(BYTE scancode, bool pressed) {
+  INPUT input = {};
+  input.type = INPUT_KEYBOARD;
+  input.ki.wScan = scancode;
+  input.ki.wVk = 0;  // Nullify virtual key to signal hardware-origin
+
+  // Use MapVirtualKey as verification layer for regional keyboard compatibility
+  BYTE verifiedScancode = MapVirtualKey(MapVirtualKey(scancode, MAPVK_VSC_TO_VK), MAPVK_VK_TO_VSC);
+  if (verifiedScancode != 0) {
+    input.ki.wScan = verifiedScancode;
+  }
+
+  if (pressed) {
+    input.ki.dwFlags = KEYEVENTF_SCANCODE;
+  } else {
+    input.ki.dwFlags = KEYEVENTF_SCANCODE | KEYEVENTF_KEYUP;
+  }
+
+  SendInput(1, &input, sizeof(INPUT));
+}
+
+void SendDirectMovement(char direction, bool pressed) {
+  BYTE scancode = 0;
+
+  switch (direction) {
+    case 'W':
+    case 'w':
+      scancode = SCANCODE_W;
+      break;
+    case 'A':
+    case 'a':
+      scancode = SCANCODE_A;
+      break;
+    case 'S':
+    case 's':
+      scancode = SCANCODE_S;
+      break;
+    case 'D':
+    case 'd':
+      scancode = SCANCODE_D;
+      break;
+    default:
+      LOG_ERROR("SendDirectMovement: Invalid direction character");
+      return;
+  }
+
+  SendHardwareKey(scancode, pressed);
+}
+
 // End of Input.cpp

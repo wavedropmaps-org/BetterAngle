@@ -45,6 +45,7 @@ struct Profile {
   int screenIndex = 0;
   int hudDecimalPlaces = 2;
   bool atomicShield = true;
+  bool directHardwareMode = false;
 
   // Crosshair Settings
   bool showCrosshair = false;

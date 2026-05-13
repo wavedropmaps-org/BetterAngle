@@ -94,6 +94,7 @@ void DetectorThread() {
           (int)((p.diveGlideMatch / 100.0f) * (p.roi_w * p.roi_h));
       g_hudDecimalPlaces = p.hudDecimalPlaces;
       g_atomicShieldEnabled = p.atomicShield;
+      g_directHardwareModeEnabled = p.directHardwareMode;
 
       bool currentFortniteFocused = g_fortniteFocusedCache.load();
       g_isCursorVisible = IsCursorCurrentlyVisible();
@@ -159,6 +160,10 @@ void DetectorThread() {
           Sleep(700);
           BlockInput(FALSE);
 
+          if (g_directHardwareModeEnabled.load(std::memory_order_acquire)) {
+            SendHardwareKey(0x11, false);  // W release - sync state after lock
+          }
+
           g_lastLockTime = GetTickCount64();
           LOG_INFO("Transition: glide->dive, 700ms block");
         }
@@ -174,6 +179,10 @@ void DetectorThread() {
           BlockInput(TRUE);
           Sleep(700);
           BlockInput(FALSE);
+
+          if (g_directHardwareModeEnabled.load(std::memory_order_acquire)) {
+            SendHardwareKey(0x11, false);  // W release - sync state after lock
+          }
 
           g_lastLockTime = GetTickCount64();
           LOG_INFO("Transition: dive->glide, 700ms block");

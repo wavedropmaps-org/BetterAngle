@@ -99,6 +99,12 @@ bool Profile::Load(const std::wstring &path) {
     atomicShield = true;
   }
 
+  if (content.find("\"directHardwareMode\"") != std::string::npos) {
+    directHardwareMode = extractDouble("directHardwareMode") > 0.5;
+  } else {
+    directHardwareMode = false;
+  }
+
   // Load Keybinds
   keybinds.toggleMod = (UINT)extractDouble("kb_toggleMod");
   keybinds.toggleKey = (UINT)extractDouble("kb_toggleKey");
@@ -240,6 +246,7 @@ bool Profile::Save(const std::wstring &path) {
   ss << "  \"screenIndex\": " << screenIndex << ",\n";
   ss << "  \"hudDecimalPlaces\": " << hudDecimalPlaces << ",\n";
   ss << "  \"atomicShield\": " << (atomicShield ? 1 : 0) << ",\n";
+  ss << "  \"directHardwareMode\": " << (directHardwareMode ? 1 : 0) << ",\n";
   ss << "  \"kb_toggleMod\": " << keybinds.toggleMod << ",\n";
   ss << "  \"kb_toggleKey\": " << keybinds.toggleKey << ",\n";
   ss << "  \"kb_roiMod\": " << keybinds.roiMod << ",\n";
