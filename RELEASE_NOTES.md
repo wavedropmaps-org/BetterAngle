@@ -1,3 +1,6 @@
+### BetterAngle Pro v5.5.256
+- Automated build release.
+
 ### BetterAngle Pro v5.5.255
 - **Feature: Sub-Pixel Interpolation (HUD Smoothing)**. Implemented a LERP-based visual smoothing engine that makes HUD decimals "glide" between values for a premium, high-resolution feel.
 - **UI: HUD Smoothing Toggle**. Added a switch to the Engine tab to enable/disable visual interpolation.
