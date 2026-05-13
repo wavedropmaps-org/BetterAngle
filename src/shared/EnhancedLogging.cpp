@@ -99,9 +99,11 @@ void EnhancedLogger::Log(LogLevel level, const char* file, int line, const std::
         filename = filename.substr(lastSlash + 1);
     }
 
-    m_stream << "[" << TimestampNow() << "] [" << LevelToString(level) << "] [" 
+    m_stream << "[" << TimestampNow() << "] [" << LevelToString(level) << "] ["
              << filename << ":" << line << "] " << message << "\n";
-    
+    m_stream.flush(); // v5.5.99: write immediately — buffering hid every log
+                      // line until the app shut down.
+
     // Check rotation occasionally
     CheckRotation();
 }

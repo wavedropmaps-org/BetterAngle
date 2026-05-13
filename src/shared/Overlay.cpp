@@ -3,6 +3,7 @@
 #include "shared/Input.h"
 #include "shared/Logic.h"
 #include "shared/State.h"
+#include <cmath>
 #include <gdiplus.h>
 #include <iomanip>
 #include <iostream>
@@ -23,11 +24,11 @@ void AddRoundedRect(GraphicsPath &path, int x, int y, int width, int height,
   path.CloseFigure();
 }
 
-// Helper: format float to N decimal places
+// Helper: format float to N decimal places (stack-based, no stream allocation)
 static std::wstring FmtFloat(double v, int decimals = 2) {
-  std::wostringstream ss;
-  ss << std::fixed << std::setprecision(decimals) << v;
-  return ss.str();
+  wchar_t buf[32];
+  swprintf_s(buf, L"%.*f", decimals, v);
+  return buf;
 }
 
 // Static FPS tracking
@@ -78,6 +79,48 @@ static bool CheckFortniteProcessFast() {
 void DrawOverlay(HWND hwnd, double angle, bool showCrosshair) {
   TickFPS();
 
+  // Static cached GDI+ objects (initialized once, reused every frame)
+  static FontFamily *s_ff = nullptr;
+  static Font *s_labelFont = nullptr;
+  static Font *s_angleFont = nullptr;
+  static Font *s_subFont = nullptr;
+  static Font *s_tinyFont = nullptr;
+  static Font *s_roiFont = nullptr;
+  static Font *s_selFont = nullptr;
+  static Font *s_selSubFont = nullptr;
+  static StringFormat *s_fmtCenter = nullptr;
+  static StringFormat *s_fmtAngle = nullptr;
+  static SolidBrush *s_labelBrush = nullptr;
+  static SolidBrush *s_matchLabelBrush = nullptr;
+  static SolidBrush *s_barBgBrush = nullptr;
+  static SolidBrush *s_whiteBrush = nullptr;
+  static Pen *s_barPen = nullptr;
+  static Pen *s_swatchPen = nullptr;
+  static Font *s_dbgFont = nullptr;
+
+  if (!s_ff) {
+    s_ff = new FontFamily(L"Segoe UI");
+    s_labelFont = new Font(s_ff, 9, FontStyleBold, UnitPixel);
+    s_angleFont = new Font(s_ff, 68, FontStyleBold, UnitPixel);
+    s_subFont = new Font(s_ff, 12, FontStyleBold, UnitPixel);
+    s_tinyFont = new Font(s_ff, 9, FontStyleRegular, UnitPixel);
+    s_roiFont = new Font(s_ff, 10, FontStyleBold, UnitPixel);
+    s_selFont = new Font(s_ff, 28, FontStyleBold, UnitPixel);
+    s_selSubFont = new Font(s_ff, 15, FontStyleRegular, UnitPixel);
+    s_dbgFont = new Font(s_ff, 10, FontStyleRegular, UnitPixel);
+    s_fmtCenter = new StringFormat();
+    s_fmtCenter->SetAlignment(StringAlignmentCenter);
+    s_fmtAngle = new StringFormat();
+    s_fmtAngle->SetAlignment(StringAlignmentCenter);
+    s_fmtAngle->SetLineAlignment(StringAlignmentNear);
+    s_labelBrush = new SolidBrush(Color(160, 180, 185, 195));
+    s_matchLabelBrush = new SolidBrush(Color(200, 160, 170, 185));
+    s_barBgBrush = new SolidBrush(Color(60, 255, 255, 255));
+    s_whiteBrush = new SolidBrush(Color(255, 255, 255, 255));
+    s_barPen = new Pen(Color(40, 255, 255, 255), 1.0f);
+    s_swatchPen = new Pen(Color(100, 220, 220, 220), 1.0f);
+  }
+
   RECT rect;
   GetClientRect(hwnd, &rect);
   int sw = rect.right - rect.left;
@@ -119,7 +162,14 @@ void DrawOverlay(HWND hwnd, double angle, bool showCrosshair) {
   if (g_screenSnapshot && g_currentSelection != NONE) {
     HDC hdcSnap = CreateCompatibleDC(hdcMem);
     HGDIOBJ hOldSnap = SelectObject(hdcSnap, g_screenSnapshot);
-    BitBlt(hdcMem, 0, 0, sw, sh, hdcSnap, 0, 0, SRCCOPY);
+    // The snapshot is the FULL virtual desktop. Blit the slice corresponding
+    // to the configured monitor — without this offset, secondary monitors
+    // would render the primary monitor's content (Discord/browser etc.).
+    RECT mRect = GetMonitorRectByIndex(g_screenIndex);
+    int virX = GetSystemMetrics(SM_XVIRTUALSCREEN);
+    int virY = GetSystemMetrics(SM_YVIRTUALSCREEN);
+    BitBlt(hdcMem, 0, 0, sw, sh, hdcSnap,
+           mRect.left - virX, mRect.top - virY, SRCCOPY);
     SelectObject(hdcSnap, hOldSnap);
     DeleteDC(hdcSnap);
 
@@ -151,11 +201,6 @@ void DrawOverlay(HWND hwnd, double angle, bool showCrosshair) {
     SolidBrush dimBrush(Color(120, 0, 0, 0));
     graphics.FillRectangle(&dimBrush, 0, 0, sw, sh);
 
-    FontFamily selFF(L"Segoe UI");
-    Font selFont(&selFF, 28, FontStyleBold, UnitPixel);
-    Font selSub(&selFF, 15, FontStyleRegular, UnitPixel);
-
-    SolidBrush whiteBrush(Color(255, 255, 255, 255));
     SolidBrush dimWhite(Color(180, 220, 220, 220));
 
     // For ROI/Selection drawing, we need to map from Screen to Client
@@ -166,8 +211,8 @@ void DrawOverlay(HWND hwnd, double angle, bool showCrosshair) {
 
     if (g_currentSelection == SELECTING_ROI) {
       graphics.DrawString(L"STAGE 1  \xB7  Drag to select the dive prompt area",
-                          -1, &selFont, PointF(50.0f, 42.0f), &whiteBrush);
-      graphics.DrawString(L"Press the hotkey again to cancel", -1, &selSub,
+                          -1, s_selFont, PointF(50.0f, 42.0f), s_whiteBrush);
+      graphics.DrawString(L"Press the hotkey again to cancel", -1, s_selSubFont,
                           PointF(52.0f, 80.0f), &dimWhite);
 
       if (g_selectionRect.right > g_selectionRect.left) {
@@ -183,9 +228,9 @@ void DrawOverlay(HWND hwnd, double angle, bool showCrosshair) {
 
     } else if (g_currentSelection == SELECTING_COLOR) {
       graphics.DrawString(L"STAGE 2  \xB7  Click to pick the prompt colour", -1,
-                          &selFont, PointF(50.0f, 42.0f), &whiteBrush);
+                          s_selFont, PointF(50.0f, 42.0f), s_whiteBrush);
       graphics.DrawString(L"Hover over the brightest part of the prompt text",
-                          -1, &selSub, PointF(52.0f, 80.0f), &dimWhite);
+                          -1, s_selSubFont, PointF(52.0f, 80.0f), &dimWhite);
 
       // Draw the selected ROI rectangle
       if (g_selectionRect.right > g_selectionRect.left) {
@@ -264,10 +309,8 @@ void DrawOverlay(HWND hwnd, double angle, bool showCrosshair) {
                                                : L"GLIDING";
         std::wstring label = stateLabel;
 
-        FontFamily roiFF(L"Segoe UI");
-        Font roiFont(&roiFF, 10, FontStyleBold, UnitPixel);
         SolidBrush roiLabelBrush(roiCol);
-        graphics.DrawString(label.c_str(), -1, &roiFont,
+        graphics.DrawString(label.c_str(), -1, s_roiFont,
                             PointF(float(p.roi_x + 4), float(p.roi_y + 4)),
                             &roiLabelBrush);
       }
@@ -275,10 +318,22 @@ void DrawOverlay(HWND hwnd, double angle, bool showCrosshair) {
 
     // Crosshair
     if (showCrosshair) {
-      // Map the monitor's center to the HUD's client coordinate space
-      // Window is now localized to the monitor, so center is just sw/2 and sh/2
-      float cx = (float)sw * 0.5f + g_crossOffsetX;
-      float cy = (float)sh * 0.5f + g_crossOffsetY;
+      // Center crosshair dynamically on the Fortnite game window if active
+      float cx, cy;
+      if (g_fortniteWindow && g_fortniteRect.right > g_fortniteRect.left) {
+        // Find physical center of the active game client in screen space
+        float gameCenterX = g_fortniteRect.left + (g_fortniteRect.right - g_fortniteRect.left) * 0.5f;
+        float gameCenterY = g_fortniteRect.top + (g_fortniteRect.bottom - g_fortniteRect.top) * 0.5f;
+        
+        // HUD starts at mRect.left, mRect.top. Map screen space to HUD local space
+        RECT mRect = GetMonitorRectByIndex(g_screenIndex);
+        cx = gameCenterX - mRect.left + g_crossOffsetX;
+        cy = gameCenterY - mRect.top + g_crossOffsetY;
+      } else {
+        // Fallback: Map the monitor's center to the HUD's client coordinate space
+        cx = (float)sw * 0.5f + g_crossOffsetX;
+        cy = (float)sh * 0.5f + g_crossOffsetY;
+      }
 
       // Make crosshair massive like the Java reference
       float hw = (sw > sh ? sw : sh) * 3.0f;
@@ -370,35 +425,70 @@ void DrawOverlay(HWND hwnd, double angle, bool showCrosshair) {
     graphics.DrawPath(&borderPen, &path);
 
     // "CURRENT ANGLE" label
-    FontFamily ff(L"Segoe UI");
-    Font labelFont(&ff, 9, FontStyleBold, UnitPixel);
-    SolidBrush labelBrush(Color(160, 180, 185, 195));
-    StringFormat fmtLabel;
-    fmtLabel.SetAlignment(StringAlignmentCenter);
-    graphics.DrawString(L"CURRENT ANGLE", -1, &labelFont,
+    graphics.DrawString(L"CURRENT ANGLE", -1, s_labelFont,
                         RectF(float(rx), float(ry + 8), float(rw), 18.0f),
-                        &fmtLabel, &labelBrush);
+                        s_fmtCenter, s_labelBrush);
 
-    // Angle text — L"\xB0" is the degree symbol (safe ASCII escape)
-    Font angleFont(&ff, 68, FontStyleBold, UnitPixel);
+    // Angle text — colour-coded segments for quick readability.
+    // Whole number = Green, 1st decimal = Cyan, 2nd decimal = Yellow.
     double dispAngle = std::abs(angle);
-    double roundedAngle = std::round(dispAngle * 10.0) / 10.0;
-    if (roundedAngle >= 360.0)
-      roundedAngle -= 360.0;
-    std::wstring angleStr = FmtFloat(roundedAngle, 1) + L"\xB0";
-    Color angleCol =
-        g_isDiving ? Color(255, 0, 220, 255) : Color(255, 0, 210, 140);
-    SolidBrush angleBrush(angleCol);
+    int decimals = g_hudDecimalPlaces.load();
+    long long factor = (decimals == 2) ? 100LL : 10LL;
 
-    StringFormat fmtAngle;
-    fmtAngle.SetAlignment(StringAlignmentCenter);
-    fmtAngle.SetLineAlignment(StringAlignmentNear);
-    graphics.DrawString(angleStr.c_str(), -1, &angleFont,
-                        RectF(float(rx), float(ry + 26), float(rw), 80.0f),
-                        &fmtAngle, &angleBrush);
+    // Convert to a scaled integer once to avoid floating-point truncation
+    // errors when extracting individual decimal digits via % and /.
+    long long ival = llround(dispAngle * (double)factor);
+    if (ival >= 360LL * factor) ival -= 360LL * factor;
+
+    int wholePart = (int)(ival / factor);
+    int dec1 = (decimals == 2) ? (int)((ival / 10LL) % 10LL)
+                                : (int)(ival % 10LL);
+    int dec2 = (int)(ival % 10LL);
+
+    // Build segment strings
+    std::wstring wholeStr = std::to_wstring(wholePart) + L".";
+    std::wstring dec1Str = std::to_wstring(dec1);
+    std::wstring dec2Str = (decimals == 2) ? std::to_wstring(dec2) : L"";
+    std::wstring degStr = L"\xB0";
+
+    // Colour definitions (bright, easily distinguishable)
+    SolidBrush greenBrush(Color(255, 100, 220, 100));  // Whole number
+    SolidBrush cyanBrush(Color(255, 0, 220, 255));     // 1st decimal
+    SolidBrush yellowBrush(Color(255, 255, 220, 50));   // 2nd decimal
+    SolidBrush degBrush(Color(180, 200, 200, 200));     // Degree symbol
+
+    Font *useFont = s_angleFont;
+
+    // GenericTypographic eliminates GDI+ internal per-segment padding so
+    // back-to-back DrawString calls don't accumulate gaps between segments.
+    const StringFormat *sfTypo = StringFormat::GenericTypographic();
+
+    // Measure total width for centering (measure the full string as one unit)
+    std::wstring fullAngleStr = wholeStr + dec1Str + (decimals == 2 ? dec2Str : L"") + degStr;
+    RectF mTotal;
+    graphics.MeasureString(fullAngleStr.c_str(), -1, useFont, PointF(0, 0), sfTypo, &mTotal);
+
+    RectF mWhole, mDec1, mDec2, mDeg;
+    graphics.MeasureString(wholeStr.c_str(), -1, useFont, PointF(0, 0), sfTypo, &mWhole);
+    graphics.MeasureString(dec1Str.c_str(), -1, useFont, PointF(0, 0), sfTypo, &mDec1);
+    if (decimals == 2)
+      graphics.MeasureString(dec2Str.c_str(), -1, useFont, PointF(0, 0), sfTypo, &mDec2);
+    graphics.MeasureString(degStr.c_str(), -1, useFont, PointF(0, 0), sfTypo, &mDeg);
+
+    float startX = float(rx) + (float(rw) - mTotal.Width) / 2.0f;
+    float textY = float(ry + 30);
+
+    graphics.DrawString(wholeStr.c_str(), -1, useFont, PointF(startX, textY), sfTypo, &greenBrush);
+    startX += mWhole.Width;
+    graphics.DrawString(dec1Str.c_str(), -1, useFont, PointF(startX, textY), sfTypo, &cyanBrush);
+    startX += mDec1.Width;
+    if (decimals == 2) {
+      graphics.DrawString(dec2Str.c_str(), -1, useFont, PointF(startX, textY), sfTypo, &yellowBrush);
+      startX += mDec2.Width;
+    }
+    graphics.DrawString(degStr.c_str(), -1, useFont, PointF(startX, textY), sfTypo, &degBrush);
 
     // Match % label
-    Font subFont(&ff, 12, FontStyleBold, UnitPixel);
     int matchCount = g_matchCount.load();
     int area = (g_allProfiles.empty())
                    ? 10000
@@ -409,16 +499,13 @@ void DrawOverlay(HWND hwnd, double angle, bool showCrosshair) {
     float detectionRatio = (float)matchCount / area;
     int matchPct = int(detectionRatio * 100.0f);
     std::wstring matchStr = L"Match  " + std::to_wstring(matchPct) + L"%";
-    Color matchLabelCol(200, 160, 170, 185);
-    SolidBrush matchLabelB(matchLabelCol);
-    graphics.DrawString(matchStr.c_str(), -1, &subFont,
+    graphics.DrawString(matchStr.c_str(), -1, s_subFont,
                         PointF(float(rx + 14), float(ry + rh - 54)),
-                        &matchLabelB);
+                        s_matchLabelBrush);
 
     // Match progress bar
     int barX = rx + 14, barY = ry + rh - 38, barW = rw - 28, barH = 8;
-    SolidBrush barBgB(Color(60, 255, 255, 255));
-    graphics.FillRectangle(&barBgB, barX, barY, barW, barH);
+    graphics.FillRectangle(s_barBgBrush, barX, barY, barW, barH);
     float clampedRatio = detectionRatio > 1.0f ? 1.0f : detectionRatio;
     int fillW = int(clampedRatio * barW);
     if (fillW > 0) {
@@ -429,8 +516,7 @@ void DrawOverlay(HWND hwnd, double angle, bool showCrosshair) {
                                   Color(200, r / 2, g, 80));
       graphics.FillRectangle(&barFill, barX, barY, fillW, barH);
     }
-    Pen barPen(Color(40, 255, 255, 255), 1.0f);
-    graphics.DrawRectangle(&barPen, barX, barY, barW, barH);
+    graphics.DrawRectangle(s_barPen, barX, barY, barW, barH);
 
     // Target colour swatch (top-right corner)
     int swatchX = rx + rw - 28, swatchY = ry + 8;
@@ -438,17 +524,13 @@ void DrawOverlay(HWND hwnd, double angle, bool showCrosshair) {
                  GetRValue(g_targetColor));
     SolidBrush swatchB(swatch);
     graphics.FillEllipse(&swatchB, swatchX, swatchY, 16, 16);
-    Pen swatchP(Color(100, 220, 220, 220), 1.0f);
-    graphics.DrawEllipse(&swatchP, swatchX, swatchY, 16, 16);
+    graphics.DrawEllipse(s_swatchPen, swatchX, swatchY, 16, 16);
 
     // Drag hint
-    Font tinyFont(&ff, 9, FontStyleRegular, UnitPixel);
     SolidBrush tinyBrush(Color(g_isDraggingHUD ? 130 : 50, 200, 210, 220));
-    StringFormat sfCenter;
-    sfCenter.SetAlignment(StringAlignmentCenter);
-    graphics.DrawString(L":: drag", -1, &tinyFont,
+    graphics.DrawString(L":: drag", -1, s_tinyFont,
                         RectF(float(rx), float(ry + rh - 14), float(rw), 12.0f),
-                        &sfCenter, &tinyBrush);
+                        s_fmtCenter, &tinyBrush);
 
     // DEBUG Overlay Box
     if (g_showDebugOverlay && !g_allProfiles.empty()) {
@@ -458,7 +540,7 @@ void DrawOverlay(HWND hwnd, double angle, bool showCrosshair) {
       int dx = rx;
       int dy = ry + rh + 8;
       int dw = rw * 2; // Double width for columns (v5.5.17)
-      int dh = 280;    // Optimized height for two-column layout
+      int dh = 396;    // v5.5.99: + 3 rows for last-lock per-key snapshot
 
       LinearGradientBrush dbgBrush(Point(dx, dy), Point(dx, dy + dh),
                                    Color(175, 8, 10, 14), Color(175, 3, 5, 8));
@@ -469,19 +551,18 @@ void DrawOverlay(HWND hwnd, double angle, bool showCrosshair) {
       Pen dBorder(Color(100, 0, 204, 153), 1.0f);
       graphics.DrawPath(&dBorder, &dPath);
 
-      Font dbgFont(&ff, 10, FontStyleRegular, UnitPixel);
       SolidBrush dbgTextL(Color(255, 160, 160, 160));
 
       auto DrawRow = [&](int row, int col, const wchar_t *label,
                          const std::wstring &val, bool isGood = true) {
         float xOff = float(dx + 10 + (col * (dw / 2)));
         float yPos = float(dy + 8 + (row * 16));
-        graphics.DrawString(label, -1, &dbgFont, PointF(xOff, yPos), &dbgTextL);
+        graphics.DrawString(label, -1, s_dbgFont, PointF(xOff, yPos), &dbgTextL);
         SolidBrush valBrush(isGood ? Color(255, 0, 220, 170)
                                    : Color(255, 255, 80, 80));
 
         float xVal = xOff + (dw / 2) - 140;
-        graphics.DrawString(val.c_str(), -1, &dbgFont, PointF(xVal, yPos),
+        graphics.DrawString(val.c_str(), -1, s_dbgFont, PointF(xVal, yPos),
                             &valBrush);
       };
 
@@ -520,15 +601,6 @@ void DrawOverlay(HWND hwnd, double angle, bool showCrosshair) {
               !g_isDiving);
       DrawRow(6, 0, L"Input Locked:", suspended ? suspStr : L"NO", !suspended);
 
-      std::wstring reasonStr = L"None";
-      int reason = g_lockTriggerReason.load();
-      if (reason == 1)
-        reasonStr = L"Glide>Dive";
-      else if (reason == 2)
-        reasonStr = L"Dive>Glide";
-      else if (reason == 3)
-        reasonStr = L"Alt-Tab";
-      DrawRow(7, 0, L"Lock Reason:", reasonStr, reason == 0);
 
       DrawRow(8, 0, L"Fortnite Running:", fnRun ? L"YES" : L"NO", fnRun);
       DrawRow(9, 0, L"Fortnite Focused:", fnFoc ? L"YES" : L"NO", fnFoc);
@@ -544,121 +616,7 @@ void DrawOverlay(HWND hwnd, double angle, bool showCrosshair) {
               std::to_wstring(g_scannerCpuPct.load()) + L"%",
               g_scannerCpuPct.load() < 50);
 
-      // Column 1: Ghost Fix & Forensics (v5.5.69)
-      static const int keys[] = {'W', 'A', 'S', 'D'};
-      static const wchar_t *names[] = {L"W", L"A", L"S", L"D"};
-
-      bool isLocked = suspended;
-      DrawRow(0, 1, L"Input Lock:", isLocked ? L"ACTIVE" : L"IDLE", !isLocked);
-
-      DrawRow(1, 1, L"Lock Count:", std::to_wstring(g_lockCount.load()));
-      DrawRow(2, 1, L"Lock Duration:",
-              std::to_wstring(g_lockDurationMs.load()) + L" ms");
-
-      if (g_hasSynced) {
-        // GHOST STATUS: Instant problem identification.
-        // Uses INVERSE LOGIC matching the correction: only Make (typematic
-        // repeat) proves the user is still holding. Arrays are from the clean
-        // 200ms window after Restore (contamination-filtered).
-        // Combined logic: only Mk=1 Br=0 means still holding.
-        // post=1 + (Br=1 || Mk=0) → ghost-walk (restored but user released)
-        // post=0 + Mk=1 Br=0 → under-restore (corrected but user still holding)
-        std::wstring ghostStatus;
-        bool ghostOk = true;
-        for (int i = 0; i < 4; ++i) {
-          bool pre = g_preState[i].load();
-          bool post = g_postState[i].load();
-          bool brk = g_rawKeyUpDetected[keys[i]].load();
-          bool mk = g_rawKeyMakeDetected[keys[i]].load();
-          if (!pre)
-            continue;
-          bool shouldStillBePressed = mk && !brk;
-          if (post && !shouldStillBePressed) {
-            // Restored but user released (Br=1 or no Mk) → ghost-walk
-            ghostStatus += std::wstring(names[i]) + L":GHOST! ";
-            ghostOk = false;
-          } else if (!post && shouldStillBePressed) {
-            // Not restored but user still holding → under-restore
-            ghostStatus += std::wstring(names[i]) + L":UNDER ";
-            ghostOk = false;
-          }
-        }
-        if (ghostOk)
-          ghostStatus = L"CLEAN";
-        DrawRow(3, 1, L"Ghost Status:", ghostStatus, ghostOk);
-
-        int fb = g_activeFallback.load();
-        std::wstring fbStr =
-            (fb == 0) ? L"NONE"
-                      : (fb == 1 ? L"SHOCK-ONLY"
-                                 : (fb == 5 ? L"RAW-CORRECTED" : L"FAIL"));
-        DrawRow(4, 1, L"Fallback:", fbStr, fb == 0);
-        DrawRow(5, 1, L"Fix State:",
-                std::wstring(g_ghostFixInProgress ? L"RUNNING" : L"IDLE"),
-                !g_ghostFixInProgress);
-        DrawRow(6, 1, L"Fix Duration:",
-                std::to_wstring(g_ghostFixDurationMs.load()) + L" ms",
-                g_ghostFixDurationMs.load() < 400);
-        DrawRow(7, 1, L"Method:", L"HARD-RESET", true);
-
-        auto RawCell = [&](int vk) -> std::wstring {
-          bool brk = g_rawKeyUpDetected[vk].load();
-          bool mk = g_rawKeyMakeDetected[vk].load();
-          if (mk && brk)
-            return L"MB";
-          if (mk)
-            return L"M";
-          if (brk)
-            return L"B";
-          return L".";
-        };
-
-        auto OsCell = [&](int vk) -> wchar_t {
-          return (GetAsyncKeyState(vk) & 0x8000) ? L'1' : L'0';
-        };
-
-        std::wstring rawState = L"W:" + RawCell('W') + L" A:" + RawCell('A') +
-                                L" S:" + RawCell('S') + L" D:" + RawCell('D');
-        std::wstring osState = std::wstring(L"W:") + OsCell('W') + L" A:" +
-                               OsCell('A') + L" S:" + OsCell('S') + L" D:" +
-                               OsCell('D');
-        DrawRow(8, 1, L"Raw State:", rawState, true);
-        DrawRow(9, 1, L"OS State:", osState, true);
-
-        // Per-key forensics: pre/post/phys/Br/Mk
-        // pre = held before lock, post = after fix, phys = live OS read
-        // Br/Mk = Raw Input from clean 200ms window (contamination-filtered)
-        for (int i = 0; i < 4; ++i) {
-          bool pre = g_preState[i].load();
-          bool post = g_postState[i].load();
-          bool phys = (GetAsyncKeyState(keys[i]) & 0x8000) != 0;
-          bool brk = g_rawKeyUpDetected[keys[i]].load();
-          bool mk = g_rawKeyMakeDetected[keys[i]].load();
-
-          std::wstring val = std::wstring(pre ? L"1" : L"0") + L"/" +
-                             std::wstring(post ? L"1" : L"0") + L"/" +
-                             std::wstring(phys ? L"1" : L"0") + L" Br=" +
-                             std::wstring(brk ? L"1" : L"0") + L" Mk=" +
-                             std::wstring(mk ? L"1" : L"0");
-
-          // COMBINED LOGIC (v5.5.69): Only keep pressed if Mk=1 AND Br=0.
-          // Br=1 || Mk=0 → user released → post should be 0 (ghost killed)
-          // Br=0 && Mk=1 → still holding → post should be 1
-          bool rawConsistent = true;
-          if (pre) {
-            bool shouldStillBePressed = mk && !brk;
-            rawConsistent = (shouldStillBePressed ? post : !post);
-          }
-          DrawRow(10 + i, 1, names[i], val, pre ? rawConsistent : true);
-        }
-      } else {
-        DrawRow(3, 1, L"Ghost Status:", L"AWAITING FIRST LOCK", true);
-      }
-
-      DrawRow(14, 1, L"Input State:",
-              g_blockInputActive ? L"LOCKED" : L"UNLOCKED",
-              !g_blockInputActive);
-      DrawRow(15, 1, L"Version:", L"v" + std::wstring(VERSION_WSTR), true);
+      DrawRow(7, 1, L"Version:", L"v" + std::wstring(VERSION_WSTR), true);
     }
   }
 

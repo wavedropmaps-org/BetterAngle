@@ -15,6 +15,7 @@ class BetterAngleBackend : public QObject {
                  NOTIFY profileChanged)
   Q_PROPERTY(int screenIndex READ screenIndex WRITE setScreenIndex NOTIFY profileChanged)
   Q_PROPERTY(QStringList availableScreens READ availableScreens CONSTANT)
+  Q_PROPERTY(int hudDecimalPlaces READ hudDecimalPlaces WRITE setHudDecimalPlaces NOTIFY profileChanged)
 
   Q_PROPERTY(bool crosshairOn READ crosshairOn WRITE setCrosshairOn NOTIFY
                  crosshairChanged)
@@ -57,15 +58,15 @@ class BetterAngleBackend : public QObject {
       int detectionRatioPct READ detectionRatioPct NOTIFY debugDataChanged)
   Q_PROPERTY(bool inputLocked READ inputLocked NOTIFY debugDataChanged)
   Q_PROPERTY(bool isDiving READ isDiving NOTIFY debugDataChanged)
-  Q_PROPERTY(QString lockTriggerReason READ lockTriggerReason NOTIFY debugDataChanged)
   Q_PROPERTY(int peakMatchPct READ peakMatchPct NOTIFY debugDataChanged)
   Q_PROPERTY(QString roiDimensions READ roiDimensions NOTIFY debugDataChanged)
   Q_PROPERTY(int scannerCpuPct READ scannerCpuPct NOTIFY debugDataChanged)
   Q_PROPERTY(QString physicalKeyStates READ physicalKeyStates NOTIFY debugDataChanged)
-  Q_PROPERTY(bool ghostMismatch READ ghostMismatch NOTIFY debugDataChanged)
-  Q_PROPERTY(QString rawWState READ rawWState NOTIFY debugDataChanged)
   Q_PROPERTY(QString inputLockStatus READ inputLockStatus NOTIFY debugDataChanged)
-  Q_PROPERTY(QString nitroSyncLog READ nitroSyncLog NOTIFY debugDataChanged)
+  
+  // Performance Impact Diagnostics
+  Q_PROPERTY(double cpuUsage READ cpuUsage NOTIFY debugDataChanged)
+  Q_PROPERTY(double ramUsageMb READ ramUsageMb NOTIFY debugDataChanged)
 
   // Custom Keybinds
   Q_PROPERTY(
@@ -94,6 +95,9 @@ public:
   int screenIndex() const;
   void setScreenIndex(int v);
   QStringList availableScreens() const;
+
+  int hudDecimalPlaces() const;
+  void setHudDecimalPlaces(int v);
 
   bool crosshairOn() const;
   void setCrosshairOn(bool v);
@@ -133,15 +137,14 @@ public:
   int detectionRatioPct() const;
   bool inputLocked() const;
   bool isDiving() const;
-  QString lockTriggerReason() const;
   int peakMatchPct() const;
   QString roiDimensions() const;
   int scannerCpuPct() const;
   QString physicalKeyStates() const;
-  bool ghostMismatch() const;
-  QString rawWState() const;
   QString inputLockStatus() const;
-  QString nitroSyncLog() const;
+  
+  double cpuUsage() const;
+  double ramUsageMb() const;
   Q_INVOKABLE void refreshDebugData();
 
   Q_INVOKABLE void terminateApp();

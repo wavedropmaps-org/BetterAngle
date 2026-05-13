@@ -22,30 +22,7 @@ std::atomic<bool> g_keybindAssignmentActive(false);
 std::atomic<long long> g_detectionDelayMs(0);
 std::atomic<bool> g_showDebugOverlay(false);
 std::atomic<ULONGLONG> g_mouseSuspendedUntil(0);
-std::atomic<int> g_lockTriggerReason(0);
-std::atomic<int> g_lockCount(0);
-std::atomic<DWORD> g_lockThreadId(0);
-std::atomic<long long> g_lockDurationMs(0);
-std::atomic<short> g_wPreLock(0);
-std::atomic<short> g_wPostUnlock(0);
-std::atomic<short> g_wPostFlush(0);
-std::atomic<bool> g_preState[4];
-std::atomic<bool> g_postState[4];
-std::atomic<bool> g_blockInputActive(false);
-std::atomic<bool> g_tableRefreshed(false);
-std::atomic<bool> g_hasSynced(false);
-std::atomic<int> g_activeFallback(0);
-std::atomic<bool> g_fb1Active(false);
-std::atomic<bool> g_rawKeyUpDetected[256] = {};
-std::atomic<bool> g_rawKeyMakeDetected[256] = {};
 std::atomic<ULONGLONG> g_lastLockTime(0);
-std::atomic<bool> g_lockInProgress(false);
-std::atomic<bool> g_ghostFixInProgress(false);
-std::atomic<long long> g_ghostFixDurationMs(0);
-std::atomic<bool> g_ghostFixVerifyOk(true);
-std::mutex g_lockMutex;
-std::mutex g_blockInputMutex;
-std::string g_nitroSyncLog = "No sync events yet";
 std::atomic<int> g_peakMatchCount{0};
 std::atomic<int> g_requiredMatchCount{0};
 std::atomic<int> g_scannerCpuPct(0);
@@ -228,10 +205,11 @@ POINT g_startPoint = {0};
 
 std::string g_latestVersionOnline = "v" VERSION_STR;
 float g_currentAngle = 0.0f;
+std::atomic<int> g_hudDecimalPlaces{1}; // Default: 1 decimal place
 std::atomic<bool> g_isCursorVisible(false);
 AngleLogic g_logic(0.05);
 
-int g_hudX = -1;
+int g_hudX = 0;
 int g_hudY = 40;
 bool g_isDraggingHUD = false;
 POINT g_dragStartHUD = {0, 0};
@@ -239,13 +217,20 @@ POINT g_dragStartMouse = {0, 0};
 HWND g_hHUD = NULL;
 HWND g_hPanel = NULL;
 HWND g_hMsgWnd = NULL;
+HWND g_fortniteWindow = NULL;
+RECT g_fortniteRect = {0, 0, 0, 0};
+std::atomic<bool> g_blockInputActive(false);
+std::atomic<bool> g_justRefocused(false);
+HANDLE g_lockEvent = NULL;
+std::atomic<int> g_lockDurationMs(0);
+std::atomic<int> g_displayChangeGen(0);
 
 RECT GetMonitorRectByIndex(int index) {
   struct RectData {
     int targetIndex;
     int currentIndex;
     RECT rect;
-  } data = {index, 0, {0, 0, 0, 0}};
+  } data = {index, 0, {0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN)}};
 
   EnumDisplayMonitors(
       NULL, NULL,

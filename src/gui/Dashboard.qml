@@ -119,6 +119,63 @@ Item {
                         }
                     }
 
+                    Text { text: "HUD ANGLE PRECISION"; color: "#666"; font.pixelSize: 11; font.bold: true; topPadding: 10 }
+                    Column {
+                        spacing: 4
+                        width: parent.width
+                        Text { text: "Decimal Places"; color: "#aaa"; font.pixelSize: 12 }
+                        ComboBox {
+                            id: decimalCombo
+                            width: parent.width
+                            model: ["1 Decimal Place", "2 Decimal Places"]
+                            currentIndex: backend.hudDecimalPlaces - 1
+                            onActivated: backend.hudDecimalPlaces = index + 1
+                            contentItem: Text {
+                                text: decimalCombo.displayText
+                                color: "white"
+                                verticalAlignment: Text.AlignVCenter
+                                leftPadding: 10
+                            }
+                            background: Rectangle {
+                                color: "#1c1c2e"
+                                radius: 4
+                                border.color: "#333"
+                                border.width: 1
+                            }
+                            delegate: ItemDelegate {
+                                width: decimalCombo.width
+                                contentItem: Text {
+                                    text: modelData
+                                    color: "white"
+                                    font.pixelSize: 13
+                                    elide: Text.ElideRight
+                                    verticalAlignment: Text.AlignVCenter
+                                }
+                                background: Rectangle {
+                                    color: highlighted ? "#33334d" : "#1c1c2e"
+                                }
+                            }
+                            popup: Popup {
+                                y: parent.height
+                                width: parent.width
+                                implicitHeight: Math.min(contentItem.implicitHeight, 200)
+                                padding: 1
+                                contentItem: ListView {
+                                    clip: true
+                                    implicitHeight: contentHeight
+                                    model: decimalCombo.delegateModel
+                                    currentIndex: decimalCombo.highlightedIndex
+                                    ScrollIndicator.vertical: ScrollIndicator { }
+                                }
+                                background: Rectangle {
+                                    color: "#1c1c2e"
+                                    radius: 4
+                                    border.color: "#333"
+                                }
+                            }
+                        }
+                    }
+
                     Text { text: "DISPLAY & MONITOR"; color: "#666"; font.pixelSize: 11; font.bold: true; topPadding: 10 }
                     Column {
                         spacing: 4
@@ -1105,6 +1162,44 @@ Item {
                             onCheckedChanged: backend.showDebugOverlay = checked
                         }
                         Text { text: "Show Debug Overlay on Screen"; color: "white"; font.pixelSize: 13 }
+                    }
+
+                    RowLayout {
+                        Switch {
+                            id: perfSwitch
+                        }
+                        Text { text: "Show Performance Impact"; color: "white"; font.pixelSize: 13 }
+                    }
+
+                    Rectangle {
+                        visible: perfSwitch.checked
+                        width: parent.width; radius: 6; color: "#0e0e1a"; border.color: "#333"; border.width: 1
+                        height: perfCol.implicitHeight + 30
+                        Column {
+                            id: perfCol
+                            anchors { left: parent.left; right: parent.right; top: parent.top }
+                            anchors.margins: 15
+                            spacing: 9
+
+                            Text { text: "PERFORMANCE METRICS"; color: "#444"; font.pixelSize: 10; font.bold: true; topPadding: 5 }
+
+                            RowLayout { width: parent.width
+                                Text { text: "Process Name:"; color: "#aaa"; font.pixelSize: 13; Layout.fillWidth: true }
+                                Text { text: "BetterAngle.exe"; color: "white"; font.bold: true; font.pixelSize: 13 }
+                            }
+                            RowLayout { width: parent.width
+                                Text { text: "CPU Usage:"; color: "#aaa"; font.pixelSize: 13; Layout.fillWidth: true }
+                                Text { 
+                                    text: backend.cpuUsage.toFixed(2) + " %"; 
+                                    color: backend.cpuUsage < 2.0 ? "#00ffaa" : (backend.cpuUsage < 5.0 ? "#ffaa00" : "#ff5050")
+                                    font.bold: true; font.pixelSize: 13 
+                                }
+                            }
+                            RowLayout { width: parent.width
+                                Text { text: "RAM Usage:"; color: "#aaa"; font.pixelSize: 13; Layout.fillWidth: true }
+                                Text { text: backend.ramUsageMb.toFixed(2) + " MB"; color: "white"; font.bold: true; font.pixelSize: 13 }
+                            }
+                        }
                     }
 
                     Rectangle {
