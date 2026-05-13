@@ -1,3 +1,6 @@
+### BetterAngle Pro v5.5.232
+- Automated build release.
+
 ### BetterAngle Pro v5.5.231
 - **Stable Baseline Restoration**: Reverted the codebase to the state of version 5.5.181. This provides a clean, stable foundation while ensuring compatibility with previous calibration standards. All experimental changes since 181 have been removed.
 
