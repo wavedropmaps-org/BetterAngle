@@ -210,19 +210,57 @@ void CaptureDesktop() {
   int sx = GetSystemMetrics(SM_XVIRTUALSCREEN);
   int sy = GetSystemMetrics(SM_YVIRTUALSCREEN);
 
+  LOG_INFO("CaptureDesktop: Virtual screen dimensions: %dx%d at offset (%d, %d)", sw, sh, sx, sy);
+
   HDC hdcScreen = GetDC(NULL);
+  if (!hdcScreen) {
+    LOG_ERROR("CaptureDesktop: Failed to get screen DC");
+    return;
+  }
+
   HDC hdcMem = CreateCompatibleDC(hdcScreen);
-  if (g_screenSnapshot)
+  if (!hdcMem) {
+    LOG_ERROR("CaptureDesktop: Failed to create compatible DC");
+    ReleaseDC(NULL, hdcScreen);
+    return;
+  }
+
+  if (g_screenSnapshot) {
+    LOG_TRACE("CaptureDesktop: Deleting previous bitmap");
     DeleteObject(g_screenSnapshot);
+  }
+
   g_screenSnapshot = CreateCompatibleBitmap(hdcScreen, sw, sh);
+  if (!g_screenSnapshot) {
+    LOG_ERROR("CaptureDesktop: Failed to create compatible bitmap");
+    DeleteDC(hdcMem);
+    ReleaseDC(NULL, hdcScreen);
+    return;
+  }
+  LOG_TRACE("CaptureDesktop: Bitmap created successfully");
+
   HGDIOBJ hOld = SelectObject(hdcMem, g_screenSnapshot);
+  if (!hOld || hOld == INVALID_HANDLE_VALUE) {
+    LOG_ERROR("CaptureDesktop: Failed to select bitmap into DC");
+    DeleteObject(g_screenSnapshot);
+    g_screenSnapshot = NULL;
+    DeleteDC(hdcMem);
+    ReleaseDC(NULL, hdcScreen);
+    return;
+  }
 
   // Capture the entire virtual desktop
-  BitBlt(hdcMem, 0, 0, sw, sh, hdcScreen, sx, sy, SRCCOPY);
+  BOOL bltResult = BitBlt(hdcMem, 0, 0, sw, sh, hdcScreen, sx, sy, SRCCOPY);
+  if (!bltResult) {
+    LOG_ERROR("CaptureDesktop: BitBlt failed! GetLastError=%lu", GetLastError());
+  } else {
+    LOG_TRACE("CaptureDesktop: BitBlt successful, screen captured");
+  }
 
   SelectObject(hdcMem, hOld);
   ReleaseDC(NULL, hdcScreen);
   DeleteDC(hdcMem);
+  LOG_INFO("CaptureDesktop: Complete, g_screenSnapshot ready for use");
 }
 
 // Helper to get error description for GetLastError()
@@ -398,13 +436,16 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
           LOG_INFO("ROI selection blocked: Fortnite not focused");
           break;
         }
+        LOG_INFO("ROI selection starting: Capturing desktop snapshot");
         CaptureDesktop(); // Capture before dimming
+        LOG_INFO("ROI selection: Desktop captured, transitioning to SELECTING_ROI state");
         g_currentSelection = SELECTING_ROI;
         g_isSelectionActive = true;
         long exStyle = GetWindowLong(hWnd, GWL_EXSTYLE);
         exStyle &= ~WS_EX_TRANSPARENT;
         SetWindowLong(hWnd, GWL_EXSTYLE, exStyle);
         SetForegroundWindow(hWnd);
+        LOG_TRACE("ROI selection: Selection window activated");
       } else {
         // Save the current ROI rectangle if valid before exiting selection
         if (!g_allProfiles.empty() &&
@@ -493,29 +534,63 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
       g_selectionRect = {cur.x, cur.y, cur.x, cur.y};
     } else if (g_currentSelection == SELECTING_COLOR) {
       LOG_INFO("Stage 2 LBUTTONDOWN executed");
-      // STAGE 2: PRECISION COLOR PICK (Snap-Shot Bypass)
-      LOG_INFO("Stage 2 LBUTTONDOWN: Starting to finalize selection");
-      if (g_screenSnapshot) {
-        LOG_TRACE("Sampling color from g_screenSnapshot...");
+      // STAGE 2: PRECISION COLOR PICK (from captured screenshot)
+      LOG_INFO("Stage 2 LBUTTONDOWN: Starting to sample color from screenshot");
+
+      if (!g_screenSnapshot) {
+        LOG_ERROR("CRITICAL BUG: g_screenSnapshot is NULL! Color sampling aborted.");
+      } else {
+        LOG_TRACE("g_screenSnapshot valid at Stage 2 start");
         HDC hdcScreen = GetDC(NULL);
+        if (!hdcScreen) {
+          LOG_ERROR("Failed to get screen DC");
+        } else {
+          LOG_TRACE("Screen DC acquired successfully");
+        }
+
         HDC hdcMem = CreateCompatibleDC(hdcScreen);
-        HGDIOBJ hOld = SelectObject(hdcMem, g_screenSnapshot);
+        if (!hdcMem) {
+          LOG_ERROR("Failed to create compatible DC");
+          ReleaseDC(NULL, hdcScreen);
+        } else {
+          LOG_TRACE("Memory DC created successfully");
+          HGDIOBJ hOld = SelectObject(hdcMem, g_screenSnapshot);
+          if (!hOld || hOld == INVALID_HANDLE_VALUE) {
+            LOG_ERROR("Failed to select bitmap into memory DC");
+          } else {
+            LOG_TRACE("Bitmap selected into memory DC successfully");
+          }
 
-        int sx = GetSystemMetrics(SM_XVIRTUALSCREEN);
-        int sy = GetSystemMetrics(SM_YVIRTUALSCREEN);
+          int sx = GetSystemMetrics(SM_XVIRTUALSCREEN);
+          int sy = GetSystemMetrics(SM_YVIRTUALSCREEN);
+          LOG_TRACE("Virtual screen offset: sx=%d, sy=%d", sx, sy);
 
-        POINT cur;
-        GetCursorPos(&cur);
-        // Adjust color sample coord by the same virtual screen offset used in
-        // CaptureDesktop
-        COLORREF pixel = GetPixel(hdcMem, cur.x - sx, cur.y - sy);
+          POINT cur;
+          GetCursorPos(&cur);
+          LOG_TRACE("Cursor position: x=%d, y=%d", cur.x, cur.y);
 
-        g_pickedColor = pixel;
-        g_targetColor = pixel;
-        SelectObject(hdcMem, hOld);
-        DeleteDC(hdcMem);
-        ReleaseDC(NULL, hdcScreen);
-        LOG_TRACE("Color sampled successfully.");
+          // Adjust color sample coord by the same virtual screen offset used in
+          // CaptureDesktop
+          int bitmapX = cur.x - sx;
+          int bitmapY = cur.y - sy;
+          LOG_TRACE("Bitmap coordinates for GetPixel: x=%d, y=%d", bitmapX, bitmapY);
+
+          COLORREF pixel = GetPixel(hdcMem, bitmapX, bitmapY);
+          if (pixel == CLR_INVALID) {
+            LOG_ERROR("GetPixel returned CLR_INVALID! Coordinates may be out of bounds.");
+          } else {
+            LOG_TRACE("GetPixel succeeded, color=0x%06lX", pixel);
+          }
+
+          g_pickedColor = pixel;
+          g_targetColor = pixel;
+          LOG_INFO("Color set: g_pickedColor=0x%06lX, g_targetColor=0x%06lX", g_pickedColor, g_targetColor);
+
+          SelectObject(hdcMem, hOld);
+          DeleteDC(hdcMem);
+          ReleaseDC(NULL, hdcScreen);
+          LOG_TRACE("Color sampled successfully.");
+        }
       }
 
       // Finalize and Exit Selection
@@ -572,6 +647,11 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
     if (g_currentSelection == SELECTING_ROI) {
       // Allow transition to color selection even when Fortnite not focused
       // (safe switch for selection process)
+      LOG_INFO("Stage 1 complete: Transitioning from SELECTING_ROI to SELECTING_COLOR");
+      LOG_TRACE("ROI rectangle: left=%d, top=%d, right=%d, bottom=%d",
+                g_selectionRect.left, g_selectionRect.top,
+                g_selectionRect.right, g_selectionRect.bottom);
+      LOG_TRACE("g_screenSnapshot at transition: %p", g_screenSnapshot);
       g_currentSelection = SELECTING_COLOR;
       InvalidateRect(hWnd, NULL, FALSE);
     }
