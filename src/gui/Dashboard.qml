@@ -258,6 +258,23 @@ Item {
                             Text { text: "Prevents lock flickering during lag/particle stutters"; color: "#666"; font.pixelSize: 11 }
                         }
                     }
+
+                    RowLayout {
+                        spacing: 10
+                        Switch {
+                            id: smoothingSwitch
+                            checked: backend.hudSmoothing
+                            onCheckedChanged: backend.hudSmoothing = checked
+                            Connections {
+                                target: backend
+                                onProfileChanged: smoothingSwitch.checked = backend.hudSmoothing
+                            }
+                        }
+                        Column {
+                            Text { text: "Visual HUD Smoothing"; color: "white"; font.pixelSize: 13 }
+                            Text { text: "Makes decimals glide fluidly using sub-pixel interpolation"; color: "#666"; font.pixelSize: 11 }
+                        }
+                    }
                 }
             }
         }

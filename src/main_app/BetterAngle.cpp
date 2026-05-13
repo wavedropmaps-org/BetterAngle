@@ -636,12 +636,26 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
       g_isCursorVisible = IsCursorCurrentlyVisible();
       float ang = g_logic.GetAngle();
 
+      // Sub-Pixel Interpolation (LERP)
+      if (g_hudSmoothingEnabled.load()) {
+        float current = g_interpolatedAngle.load();
+        float diff = ang - current;
+        // Optimization: Snap if difference is huge (> 10 degrees)
+        if (std::abs(diff) > 10.0f) {
+          g_interpolatedAngle = ang;
+        } else {
+          g_interpolatedAngle = current + (diff * 0.15f);
+        }
+      } else {
+        g_interpolatedAngle = ang;
+      }
+
       // Clear the forced redraw flag occasionally set elsewhere
       g_forceRedraw.store(false);
 
       // Unconditionally draw overlay at 60FPS to keep Debug stats (FPS/Delay)
       // synced live
-      DrawOverlay(hWnd, ang, g_showCrosshair);
+      DrawOverlay(hWnd, g_interpolatedAngle.load(), g_showCrosshair);
     } else if (wParam == 2) { // 30s Auto-Save Periodic Timer
       SaveSettings();
       if (!g_allProfiles.empty() &&

@@ -262,6 +262,25 @@ void BetterAngleBackend::setDirectHardwareMode(bool v) {
   emit profileChanged();
 }
 
+bool BetterAngleBackend::hudSmoothing() const {
+  if (g_allProfiles.empty())
+    return g_hudSmoothingEnabled.load();
+  return g_allProfiles[g_selectedProfileIdx].hudSmoothing;
+}
+
+void BetterAngleBackend::setHudSmoothing(bool v) {
+  g_hudSmoothingEnabled = v;
+
+  if (!g_allProfiles.empty()) {
+    Profile &p = g_allProfiles[g_selectedProfileIdx];
+    p.hudSmoothing = v;
+    p.Save(GetProfilesPath() + p.name + L".json");
+  }
+
+  SaveSettings();
+  emit profileChanged();
+}
+
 bool BetterAngleBackend::crosshairOn() const { return g_showCrosshair; }
 void BetterAngleBackend::setCrosshairOn(bool v) {
   g_showCrosshair = v;

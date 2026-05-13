@@ -46,6 +46,7 @@ struct Profile {
   int hudDecimalPlaces = 2;
   bool atomicShield = true;
   bool directHardwareMode = false;
+  bool hudSmoothing = true;
 
   // Crosshair Settings
   bool showCrosshair = false;
