@@ -224,6 +224,25 @@ void BetterAngleBackend::setHudDecimalPlaces(int v) {
   emit profileChanged();
 }
 
+bool BetterAngleBackend::atomicShield() const {
+  if (g_allProfiles.empty())
+    return g_atomicShieldEnabled.load();
+  return g_allProfiles[g_selectedProfileIdx].atomicShield;
+}
+
+void BetterAngleBackend::setAtomicShield(bool v) {
+  g_atomicShieldEnabled = v;
+
+  if (!g_allProfiles.empty()) {
+    Profile &p = g_allProfiles[g_selectedProfileIdx];
+    p.atomicShield = v;
+    p.Save(GetProfilesPath() + p.name + L".json");
+  }
+
+  SaveSettings();
+  emit profileChanged();
+}
+
 bool BetterAngleBackend::crosshairOn() const { return g_showCrosshair; }
 void BetterAngleBackend::setCrosshairOn(bool v) {
   g_showCrosshair = v;

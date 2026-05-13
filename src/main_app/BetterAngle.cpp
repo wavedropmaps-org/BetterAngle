@@ -93,6 +93,7 @@ void DetectorThread() {
       g_requiredMatchCount =
           (int)((p.diveGlideMatch / 100.0f) * (p.roi_w * p.roi_h));
       g_hudDecimalPlaces = p.hudDecimalPlaces;
+      g_atomicShieldEnabled = p.atomicShield;
 
       bool currentFortniteFocused = g_fortniteFocusedCache.load();
       g_isCursorVisible = IsCursorCurrentlyVisible();
@@ -128,6 +129,11 @@ void DetectorThread() {
         } else if (currentMatch > g_peakMatchCount.load()) {
           g_peakMatchCount = currentMatch;
         }
+
+        // Update Atomic Shield timestamp
+        if (currentMatch >= g_requiredMatchCount.load()) {
+          g_lastValidMatchTime = GetTickCount64();
+        }
       } else {
         // Fortnite not focused, reset detection to 0
         g_matchCount = 0;
@@ -135,7 +141,10 @@ void DetectorThread() {
         g_scannerCpuPct = 0;
       }
 
-      bool nowDiving = (g_matchCount.load() >= g_requiredMatchCount.load());
+      bool scanMatch = (g_matchCount.load() >= g_requiredMatchCount.load());
+      bool shielded = g_atomicShieldEnabled.load() &&
+                      (GetTickCount64() - g_lastValidMatchTime.load() < 25);
+      bool nowDiving = scanMatch || shielded;
 
       if (GetTickCount64() >= g_mouseSuspendedUntil) {
         // Edge: Gliding -> Diving (Nitro)

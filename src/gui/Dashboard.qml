@@ -175,11 +175,8 @@ Item {
                                     color: "#1c1c2e"
                                     radius: 4
                                     border.color: "#333"
-                                }
-                            }
-                        }
-                    }
-
+                                    }
+                    
                     Column {
                         spacing: 4
                         width: parent.width
@@ -239,6 +236,26 @@ Item {
                             }
                         }
                     }
+
+                    RowLayout {
+                        spacing: 10
+                        Switch {
+                            id: shieldSwitch
+                            checked: backend.atomicShield
+                            onCheckedChanged: backend.atomicShield = checked
+                            Connections {
+                                target: backend
+                                onProfileChanged: shieldSwitch.checked = backend.atomicShield
+                            }
+                        }
+                        Column {
+                            Text { text: "Atomic Shield (Smoothing)"; color: "white"; font.pixelSize: 13 }
+                            Text { text: "Prevents lock flickering during lag/particle stutters"; color: "#666"; font.pixelSize: 11 }
+                        }
+                    }
+                }
+            }
+        }
 
                     Text { text: "TRIGGER CALIBRATION (%)"; color: "#666"; font.pixelSize: 12; topPadding: 10 }
                     RowLayout {

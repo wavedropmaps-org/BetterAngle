@@ -92,6 +92,12 @@ bool Profile::Load(const std::wstring &path) {
   } else {
     hudDecimalPlaces = 2; // Default to 2 for new profiles as requested
   }
+  
+  if (content.find("\"atomicShield\"") != std::string::npos) {
+    atomicShield = extractDouble("atomicShield") > 0.5;
+  } else {
+    atomicShield = true;
+  }
 
   // Load Keybinds
   keybinds.toggleMod = (UINT)extractDouble("kb_toggleMod");
@@ -233,6 +239,7 @@ bool Profile::Save(const std::wstring &path) {
   ss << "  \"diveGlideMatch\": " << diveGlideMatch << ",\n";
   ss << "  \"screenIndex\": " << screenIndex << ",\n";
   ss << "  \"hudDecimalPlaces\": " << hudDecimalPlaces << ",\n";
+  ss << "  \"atomicShield\": " << (atomicShield ? 1 : 0) << ",\n";
   ss << "  \"kb_toggleMod\": " << keybinds.toggleMod << ",\n";
   ss << "  \"kb_toggleKey\": " << keybinds.toggleKey << ",\n";
   ss << "  \"kb_roiMod\": " << keybinds.roiMod << ",\n";

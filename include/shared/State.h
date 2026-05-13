@@ -31,6 +31,8 @@ extern int g_screenIndex;
 extern std::atomic<int> g_displayChangeGen;
 extern std::atomic<int> g_hudDecimalPlaces;
 extern std::atomic<bool> g_fortniteFocusedCache;
+extern std::atomic<bool> g_atomicShieldEnabled;
+extern std::atomic<ULONGLONG> g_lastValidMatchTime;
 extern std::atomic<int> g_lockCount;
 extern std::atomic<bool> g_blockInputActive;
 extern std::mutex g_lockMutex;

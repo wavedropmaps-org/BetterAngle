@@ -44,6 +44,7 @@ struct Profile {
   float diveGlideMatch = 9.0f;
   int screenIndex = 0;
   int hudDecimalPlaces = 2;
+  bool atomicShield = true;
 
   // Crosshair Settings
   bool showCrosshair = false;
