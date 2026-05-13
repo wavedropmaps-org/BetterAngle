@@ -1,3 +1,6 @@
+### BetterAngle Pro v5.5.247
+- Automated build release.
+
 ### BetterAngle Pro v5.5.246
 - Automated build release.
 
