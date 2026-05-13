@@ -334,19 +334,7 @@ LRESULT CALLBACK MsgWndProc(HWND hWnd, UINT message, WPARAM wParam,
                           sizeof(RAWINPUTHEADER)) == dwSize) {
         RAWINPUT *raw = (RAWINPUT *)lpb.data();
         if (raw->header.dwType == RIM_TYPEKEYBOARD) {
-          if (g_ghostFixInProgress.load()) {
-            // CONTAMINATION FIX: Skip events during Shock&Restore — our
-            // synthetic SendInput calls would set Br=1 (Shock KeyUp) and
-            // Mk=1 (Restore KeyDown), making the correction logic think the
-            // user released and re-pressed the key. Real hardware events are
-            // collected in a dedicated window after Restore completes.
-          } else {
-            if (raw->data.keyboard.Flags & RI_KEY_BREAK) {
-              g_rawKeyUpDetected[raw->data.keyboard.VKey] = true;
-            } else {
-              g_rawKeyMakeDetected[raw->data.keyboard.VKey] = true;
-            }
-          }
+          // Keyboard events are no longer tracked for anti-ghosting
         }
       }
     }
