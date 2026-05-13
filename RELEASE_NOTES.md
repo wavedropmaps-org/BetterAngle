@@ -1,5 +1,8 @@
+### BetterAngle Pro v5.5.261
+- Automated build release.
+
 ### BetterAngle Pro v5.5.260
-- **Fix: Color Selection Pipeline**. Fixed critical coordinate offset bug in Stage 2 color picking—GetPixel was not accounting for monitor window offset on multi-monitor setups. Restructured error handling with proper NULL checks and early exits to prevent dereferencing invalid pointers.
+- **Fix: Color Selection Pipeline**. Fixed critical coordinate offset bug in Stage 2 color picking?GetPixel was not accounting for monitor window offset on multi-monitor setups. Restructured error handling with proper NULL checks and early exits to prevent dereferencing invalid pointers.
 - **Fix: CaptureDesktop() Robustness**. Added proper error handling and cleanup when BitBlt fails; bitmap is now deleted and nullified to prevent stale/corrupted data from being sampled.
 
 ### BetterAngle Pro v5.5.259
