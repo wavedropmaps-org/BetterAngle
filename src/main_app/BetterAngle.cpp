@@ -565,15 +565,19 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
           int sy = GetSystemMetrics(SM_YVIRTUALSCREEN);
           LOG_TRACE("Virtual screen offset: sx=%d, sy=%d", sx, sy);
 
+          // Get monitor offset - critical for multi-monitor setups
+          RECT mRect = GetMonitorRectByIndex(g_screenIndex);
+          LOG_TRACE("Monitor rect: left=%d, top=%d, right=%d, bottom=%d",
+                    mRect.left, mRect.top, mRect.right, mRect.bottom);
+
           POINT cur;
           GetCursorPos(&cur);
           LOG_TRACE("Cursor position: x=%d, y=%d", cur.x, cur.y);
 
-          // Adjust color sample coord by the same virtual screen offset used in
-          // CaptureDesktop
-          int bitmapX = cur.x - sx;
-          int bitmapY = cur.y - sy;
-          LOG_TRACE("Bitmap coordinates for GetPixel: x=%d, y=%d", bitmapX, bitmapY);
+          // Adjust color sample coord: account for virtual screen offset AND monitor offset
+          int bitmapX = cur.x - sx - mRect.left;
+          int bitmapY = cur.y - sy - mRect.top;
+          LOG_TRACE("Bitmap coordinates for GetPixel: x=%d, y=%d (after monitor offset adjustment)", bitmapX, bitmapY);
 
           COLORREF pixel = GetPixel(hdcMem, bitmapX, bitmapY);
           if (pixel == CLR_INVALID) {
