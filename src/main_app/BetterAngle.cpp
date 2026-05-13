@@ -253,9 +253,14 @@ void CaptureDesktop() {
   BOOL bltResult = BitBlt(hdcMem, 0, 0, sw, sh, hdcScreen, sx, sy, SRCCOPY);
   if (!bltResult) {
     LOG_ERROR("CaptureDesktop: BitBlt failed! GetLastError=%lu", GetLastError());
-  } else {
-    LOG_TRACE("CaptureDesktop: BitBlt successful, screen captured");
+    SelectObject(hdcMem, hOld);
+    DeleteObject(g_screenSnapshot);
+    g_screenSnapshot = NULL;
+    ReleaseDC(NULL, hdcScreen);
+    DeleteDC(hdcMem);
+    return;
   }
+  LOG_TRACE("CaptureDesktop: BitBlt successful, screen captured");
 
   SelectObject(hdcMem, hOld);
   ReleaseDC(NULL, hdcScreen);
@@ -537,6 +542,8 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
       // STAGE 2: PRECISION COLOR PICK (from captured screenshot)
       LOG_INFO("Stage 2 LBUTTONDOWN: Starting to sample color from screenshot");
 
+      COLORREF sampledColor = CLR_INVALID;  // Track if sampling succeeded
+
       if (!g_screenSnapshot) {
         LOG_ERROR("CRITICAL BUG: g_screenSnapshot is NULL! Color sampling aborted.");
       } else {
@@ -546,55 +553,63 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
           LOG_ERROR("Failed to get screen DC");
         } else {
           LOG_TRACE("Screen DC acquired successfully");
-        }
 
-        HDC hdcMem = CreateCompatibleDC(hdcScreen);
-        if (!hdcMem) {
-          LOG_ERROR("Failed to create compatible DC");
-          ReleaseDC(NULL, hdcScreen);
-        } else {
-          LOG_TRACE("Memory DC created successfully");
-          HGDIOBJ hOld = SelectObject(hdcMem, g_screenSnapshot);
-          if (!hOld || hOld == INVALID_HANDLE_VALUE) {
-            LOG_ERROR("Failed to select bitmap into memory DC");
+          HDC hdcMem = CreateCompatibleDC(hdcScreen);
+          if (!hdcMem) {
+            LOG_ERROR("Failed to create compatible DC");
+            ReleaseDC(NULL, hdcScreen);
           } else {
-            LOG_TRACE("Bitmap selected into memory DC successfully");
+            LOG_TRACE("Memory DC created successfully");
+            HGDIOBJ hOld = SelectObject(hdcMem, g_screenSnapshot);
+            if (!hOld || hOld == INVALID_HANDLE_VALUE) {
+              LOG_ERROR("Failed to select bitmap into memory DC");
+              DeleteDC(hdcMem);
+              ReleaseDC(NULL, hdcScreen);
+            } else {
+              LOG_TRACE("Bitmap selected into memory DC successfully");
+
+              int sx = GetSystemMetrics(SM_XVIRTUALSCREEN);
+              int sy = GetSystemMetrics(SM_YVIRTUALSCREEN);
+              LOG_TRACE("Virtual screen offset: sx=%d, sy=%d", sx, sy);
+
+              // Get monitor offset - critical for multi-monitor setups
+              RECT mRect = GetMonitorRectByIndex(g_screenIndex);
+              LOG_TRACE("Monitor rect: left=%d, top=%d, right=%d, bottom=%d",
+                        mRect.left, mRect.top, mRect.right, mRect.bottom);
+
+              POINT cur;
+              GetCursorPos(&cur);
+              LOG_TRACE("Cursor position: x=%d, y=%d", cur.x, cur.y);
+
+              // Adjust color sample coord: account for virtual screen offset AND monitor offset
+              int bitmapX = cur.x - sx - mRect.left;
+              int bitmapY = cur.y - sy - mRect.top;
+              LOG_TRACE("Bitmap coordinates for GetPixel: x=%d, y=%d (after monitor offset adjustment)", bitmapX, bitmapY);
+
+              COLORREF pixel = GetPixel(hdcMem, bitmapX, bitmapY);
+              if (pixel == CLR_INVALID) {
+                LOG_ERROR("GetPixel returned CLR_INVALID! Coordinates may be out of bounds.");
+              } else {
+                LOG_TRACE("GetPixel succeeded, color=0x%06lX", pixel);
+                sampledColor = pixel;  // Mark as successfully sampled
+              }
+
+              SelectObject(hdcMem, hOld);
+              DeleteDC(hdcMem);
+              ReleaseDC(NULL, hdcScreen);
+              LOG_TRACE("Color sampling complete.");
+            }
           }
-
-          int sx = GetSystemMetrics(SM_XVIRTUALSCREEN);
-          int sy = GetSystemMetrics(SM_YVIRTUALSCREEN);
-          LOG_TRACE("Virtual screen offset: sx=%d, sy=%d", sx, sy);
-
-          // Get monitor offset - critical for multi-monitor setups
-          RECT mRect = GetMonitorRectByIndex(g_screenIndex);
-          LOG_TRACE("Monitor rect: left=%d, top=%d, right=%d, bottom=%d",
-                    mRect.left, mRect.top, mRect.right, mRect.bottom);
-
-          POINT cur;
-          GetCursorPos(&cur);
-          LOG_TRACE("Cursor position: x=%d, y=%d", cur.x, cur.y);
-
-          // Adjust color sample coord: account for virtual screen offset AND monitor offset
-          int bitmapX = cur.x - sx - mRect.left;
-          int bitmapY = cur.y - sy - mRect.top;
-          LOG_TRACE("Bitmap coordinates for GetPixel: x=%d, y=%d (after monitor offset adjustment)", bitmapX, bitmapY);
-
-          COLORREF pixel = GetPixel(hdcMem, bitmapX, bitmapY);
-          if (pixel == CLR_INVALID) {
-            LOG_ERROR("GetPixel returned CLR_INVALID! Coordinates may be out of bounds.");
-          } else {
-            LOG_TRACE("GetPixel succeeded, color=0x%06lX", pixel);
-          }
-
-          g_pickedColor = pixel;
-          g_targetColor = pixel;
-          LOG_INFO("Color set: g_pickedColor=0x%06lX, g_targetColor=0x%06lX", g_pickedColor, g_targetColor);
-
-          SelectObject(hdcMem, hOld);
-          DeleteDC(hdcMem);
-          ReleaseDC(NULL, hdcScreen);
-          LOG_TRACE("Color sampled successfully.");
         }
+      }
+
+      // Only update profile if color sampling succeeded
+      if (sampledColor != CLR_INVALID) {
+        g_pickedColor = sampledColor;
+        g_targetColor = sampledColor;
+        LOG_INFO("Color set: g_pickedColor=0x%06lX, g_targetColor=0x%06lX", g_pickedColor, g_targetColor);
+      } else {
+        LOG_ERROR("Color sampling FAILED - will not update profile to prevent saving invalid color");
       }
 
       // Finalize and Exit Selection
@@ -611,7 +626,8 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
       g_forceRedraw = true;
       LOG_INFO("Stage 2 Redraw Forced Handle Cleaned.");
 
-      if (!g_allProfiles.empty()) {
+      // Only save profile if color sampling was successful
+      if (sampledColor != CLR_INVALID && !g_allProfiles.empty()) {
         Profile &p = g_allProfiles[g_selectedProfileIdx];
         RECT mRect = GetMonitorRectByIndex(g_screenIndex);
         p.target_color = g_pickedColor;
@@ -629,6 +645,8 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
         // Also maintain the legacy 'last_calibrated' for quick-load logic if
         // needed
         p.Save(GetProfilesPath() + L"last_calibrated.json");
+      } else if (sampledColor == CLR_INVALID) {
+        LOG_WARNING("Profile NOT saved - color sampling failed, preventing invalid data from being stored");
       }
     }
     return 0;
