@@ -1,9 +1,3 @@
-### BetterAngle Pro v5.5.264
-- Automated build release.
-
-### BetterAngle Pro v5.5.263
-- Automated build release.
-
 ### BetterAngle Pro v5.5.262
 - **Fix: ROI Selection Restoration**. Resolved the "double-offset" bug that caused coordinate mismatches on secondary monitors.
 - **Feature: Auto-Monitor Detection**. The ROI selection tool now automatically detects which monitor you are clicking on and updates the profile settings instantly.
