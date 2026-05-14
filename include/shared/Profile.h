@@ -47,6 +47,7 @@ struct Profile {
   bool atomicShield = true;
   bool directHardwareMode = false;
   bool hudSmoothing = true;
+  bool useDirect2D = true;
 
   // Crosshair Settings
   bool showCrosshair = false;

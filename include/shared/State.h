@@ -31,6 +31,7 @@ extern int g_screenIndex;
 extern std::atomic<int> g_displayChangeGen;
 extern std::atomic<int> g_hudDecimalPlaces;
 extern std::atomic<bool> g_hudSmoothingEnabled;
+extern std::atomic<bool> g_useDirect2D;
 extern std::atomic<float> g_interpolatedAngle;
 extern std::atomic<bool> g_fortniteFocusedCache;
 extern std::atomic<bool> g_atomicShieldEnabled;

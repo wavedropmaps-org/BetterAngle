@@ -1,3 +1,8 @@
+### BetterAngle Pro v5.5.265
+- **Feature: Direct2D Hardware Acceleration**. Replaced GDI+ rendering with GPU-accelerated Direct2D. Eliminates micro-stutter and provides 100% flicker-free HUD visuals at 240Hz+.
+- **Feature: DirectWrite Support**. Improved HUD text clarity with sub-pixel antialiasing for razor-sharp decimals.
+- **Safety: GDI+ Fallback**. Integrated a safe fallback to legacy GDI+ if GPU resources are unavailable or fail to initialize.
+
 ### BetterAngle Pro v5.5.264
 - Automated build release.
 

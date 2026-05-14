@@ -275,6 +275,23 @@ Item {
                             Text { text: "Makes decimals glide fluidly using sub-pixel interpolation"; color: "#666"; font.pixelSize: 11 }
                         }
                     }
+
+                    RowLayout {
+                        spacing: 10
+                        Switch {
+                            id: d2dSwitch
+                            checked: backend.useDirect2D
+                            onCheckedChanged: backend.useDirect2D = checked
+                            Connections {
+                                target: backend
+                                onProfileChanged: d2dSwitch.checked = backend.useDirect2D
+                            }
+                        }
+                        Column {
+                            Text { text: "Hardware HUD Acceleration"; color: "white"; font.pixelSize: 13 }
+                            Text { text: "Uses GPU (Direct2D) for ultra-smooth HUD rendering (240Hz+)"; color: "#666"; font.pixelSize: 11 }
+                        }
+                    }
                 }
             }
         }

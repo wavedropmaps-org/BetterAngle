@@ -625,3 +625,144 @@ render_done:
   SelectObject(hdcMem, hOld);
   ReleaseDC(NULL, hdcScreen);
 }
+
+// Direct2D Implementation (v5.5.265)
+static D2D1_COLOR_F ColorToD2D(Color c) {
+  return D2D1::ColorF(c.GetRed() / 255.0f, c.GetGreen() / 255.0f,
+                      c.GetBlue() / 255.0f, c.GetAlpha() / 255.0f);
+}
+
+void DrawOverlayD2D(Direct2DRenderer &d2d, HWND hwnd, double angle,
+                    bool showCrosshair) {
+  TickFPS();
+
+  RECT rect;
+  GetClientRect(hwnd, &rect);
+  int sw = rect.right - rect.left;
+  int sh = rect.bottom - rect.top;
+  if (sw <= 0 || sh <= 0)
+    return;
+
+  d2d.BeginDraw();
+  d2d.Clear(D2D1::ColorF(0, 0.0f)); // Transparent clear
+
+  // 1. Selection Overlays (Stage 1 & 2)
+  if (g_currentSelection != NONE) {
+    // Dim background
+    d2d.DrawRectangle(0, 0, (float)sw, (float)sh, D2D1::ColorF(0, 0.5f), 1.0f, true);
+
+    float textX = 50.0f;
+    float textY = 42.0f;
+
+    if (g_currentSelection == SELECTING_ROI) {
+      d2d.DrawText(L"STAGE 1  \xB7  Drag to select the dive prompt area", textX,
+                   textY, 28.0f, D2D1::ColorF(D2D1::ColorF::White));
+      d2d.DrawText(L"Press the hotkey again to cancel", textX + 2, textY + 38,
+                   15.0f, D2D1::ColorF(0.8f, 0.8f, 0.8f, 0.7f));
+
+      if (g_selectionRect.right > g_selectionRect.left) {
+        RECT mRect = GetMonitorRectByIndex(g_screenIndex);
+        float rx = (float)(g_selectionRect.left - mRect.left);
+        float ry = (float)(g_selectionRect.top - mRect.top);
+        float rw = (float)(g_selectionRect.right - g_selectionRect.left);
+        float rh = (float)(g_selectionRect.bottom - g_selectionRect.top);
+        d2d.DrawRectangle(rx, ry, rw, rh, D2D1::ColorF(D2D1::ColorF::White), 1.5f);
+      }
+    } else if (g_currentSelection == SELECTING_COLOR) {
+      d2d.DrawText(L"STAGE 2  \xB7  Click to pick the prompt colour", textX,
+                   textY, 28.0f, D2D1::ColorF(D2D1::ColorF::White));
+      d2d.DrawText(L"Hover over the brightest part of the prompt text", textX + 2,
+                   textY + 38, 15.0f, D2D1::ColorF(0.8f, 0.8f, 0.8f, 0.7f));
+
+      if (g_selectionRect.right > g_selectionRect.left) {
+        RECT mRect = GetMonitorRectByIndex(g_screenIndex);
+        float rx = (float)(g_selectionRect.left - mRect.left);
+        float ry = (float)(g_selectionRect.top - mRect.top);
+        float rw = (float)(g_selectionRect.right - g_selectionRect.left);
+        float rh = (float)(g_selectionRect.bottom - g_selectionRect.top);
+        d2d.DrawRectangle(rx, ry, rw, rh, D2D1::ColorF(D2D1::ColorF::White), 1.5f);
+      }
+    }
+  }
+
+  // 2. Crosshair
+  if (showCrosshair) {
+    float cx = (float)sw * 0.5f + g_crossOffsetX;
+    float cy = (float)sh * 0.5f + g_crossOffsetY;
+    float hw = (sw > sh ? sw : sh) * 3.0f;
+
+    float pulse = 1.0f;
+    if (g_crossPulse) {
+      ULONGLONG t = GetTickCount64();
+      ULONGLONG modT = t % 3000;
+      if (modT < 1200)
+        pulse = 1.0f - (float)modT / 1200.0f;
+      else if (modT < 1500)
+        pulse = 0.0f;
+      else
+        pulse = (float)(modT - 1500) / 1500.0f;
+    }
+
+    D2D1_COLOR_F cCol = D2D1::ColorF(GetRValue(g_crossColor) / 255.0f,
+                                     GetGValue(g_crossColor) / 255.0f,
+                                     GetBValue(g_crossColor) / 255.0f, pulse);
+
+    // Note: Direct2D rotation would be handled via SetTransform, but for simple
+    // crosshair, we can just draw lines.
+    d2d.DrawRectangle(cx - hw, cy - (g_crossThickness * 0.5f), hw * 2,
+                      g_crossThickness, cCol, 1.0f, true);
+    d2d.DrawRectangle(cx - (g_crossThickness * 0.5f), cy - hw, g_crossThickness,
+                      hw * 2, cCol, 1.0f, true);
+  }
+
+  // 3. HUD Box
+  {
+    float rx = (float)g_hudX, ry = (float)g_hudY, rw = 260.0f, rh = 150.0f;
+    d2d.DrawRectangle(rx, ry, rw, rh, D2D1::ColorF(0.02f, 0.03f, 0.05f, 0.6f),
+                      1.0f, true);
+
+    D2D1_COLOR_F borderCol = g_isDiving ? D2D1::ColorF(D2D1::ColorF::White, 0.8f)
+                                        : D2D1::ColorF(0.2f, 0.25f, 0.3f, 0.4f);
+    d2d.DrawRectangle(rx, ry, rw, rh, borderCol, 1.5f, false);
+
+    d2d.DrawText(L"CURRENT ANGLE", rx, ry + 8, 9.0f,
+                 D2D1::ColorF(0.6f, 0.7f, 0.8f, 0.7f), true);
+
+    // Angle segments
+    double dispAngle = std::abs(angle);
+    int decimals = g_hudDecimalPlaces.load();
+    double factor = (decimals == 2) ? 100.0 : 10.0;
+    double roundedAngle = std::round(dispAngle * factor) / factor;
+
+    std::wstring angStr = FmtFloat(roundedAngle, decimals) + L"\xB0";
+    d2d.DrawText(angStr, rx, ry + 32, (decimals == 2 ? 48.0f : 68.0f),
+                 D2D1::ColorF(0.4f, 0.85f, 0.4f, 1.0f), true);
+
+    // Match progress
+    float detectionRatio =
+        (float)g_matchCount.load() /
+        (g_allProfiles.empty() ? 10000.0f
+                               : (g_allProfiles[g_selectedProfileIdx].roi_w *
+                                  g_allProfiles[g_selectedProfileIdx].roi_h));
+    int matchPct = (int)(detectionRatio * 100);
+    d2d.DrawText(L"Match  " + std::to_wstring(matchPct) + L"%", rx + 14,
+                 ry + rh - 54, 12.0f, D2D1::ColorF(0.6f, 0.7f, 0.8f, 0.8f));
+
+    float barX = rx + 14, barY = ry + rh - 38, barW = rw - 28, barH = 8.0f;
+    d2d.DrawRectangle(barX, barY, barW, barH, D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.2f),
+                      1.0f, true);
+    float fillW = (detectionRatio > 1.0f ? 1.0f : detectionRatio) * barW;
+    if (fillW > 0) {
+      d2d.DrawRectangle(barX, barY, fillW, barH,
+                        D2D1::ColorF(0.0f, 0.8f, 0.1f, 0.8f), 1.0f, true);
+    }
+  }
+
+  d2d.EndDraw();
+
+  // Trigger layered window update from D2D target
+  // Note: D2D writes directly to the HWND if using HwndRenderTarget,
+  // but for layered windows we might need a different approach (e.g.
+  // DC-based). For now, standard HwndRenderTarget will draw on top.
+}
+

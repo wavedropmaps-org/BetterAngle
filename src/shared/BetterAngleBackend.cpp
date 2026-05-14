@@ -281,6 +281,25 @@ void BetterAngleBackend::setHudSmoothing(bool v) {
   emit profileChanged();
 }
 
+bool BetterAngleBackend::useDirect2D() const {
+  if (g_allProfiles.empty())
+    return g_useDirect2D.load();
+  return g_allProfiles[g_selectedProfileIdx].useDirect2D;
+}
+
+void BetterAngleBackend::setUseDirect2D(bool v) {
+  g_useDirect2D = v;
+
+  if (!g_allProfiles.empty()) {
+    Profile &p = g_allProfiles[g_selectedProfileIdx];
+    p.useDirect2D = v;
+    p.Save(GetProfilesPath() + p.name + L".json");
+  }
+
+  SaveSettings();
+  emit profileChanged();
+}
+
 bool BetterAngleBackend::crosshairOn() const { return g_showCrosshair; }
 void BetterAngleBackend::setCrosshairOn(bool v) {
   g_showCrosshair = v;

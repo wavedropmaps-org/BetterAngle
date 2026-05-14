@@ -22,6 +22,7 @@
 #include "shared/State.h"
 #include "shared/Tray.h"
 #include "shared/Updater.h"
+#include "shared/Direct2DRenderer.h"
 #include <QCoreApplication>
 #include <QGuiApplication>
 
@@ -39,6 +40,8 @@ void PerformanceMonitorThread();
 // Global handles defined in State.h/cpp
 ULONG_PTR g_gdiplusToken;
 FovDetector g_detector;
+Direct2DRenderer g_d2d;
+bool g_d2dInitialized = false;
 
 // Helper function to flush pending input messages before blocking
 static void FlushPendingInputMessages() {
@@ -422,6 +425,10 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
                             LPARAM lParam) {
   switch (message) {
   case WM_CREATE:
+    if (g_useDirect2D) {
+      g_d2dInitialized = g_d2d.Initialize(hWnd);
+      LOG_INFO("Direct2D initialization: %s", g_d2dInitialized ? "SUCCESS" : "FAILED");
+    }
     RefreshHotkeys(hWnd);
     // Initialize system tray icon when window is fully created
     AddSystrayIcon(hWnd, GetModuleHandle(NULL));
@@ -779,7 +786,11 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
 
       // Unconditionally draw overlay at 60FPS to keep Debug stats (FPS/Delay)
       // synced live
-      DrawOverlay(hWnd, g_interpolatedAngle.load(), g_showCrosshair);
+      if (g_useDirect2D.load() && g_d2dInitialized) {
+        DrawOverlayD2D(g_d2d, hWnd, g_interpolatedAngle.load(), g_showCrosshair);
+      } else {
+        DrawOverlay(hWnd, g_interpolatedAngle.load(), g_showCrosshair);
+      }
     } else if (wParam == 2) { // 30s Auto-Save Periodic Timer
       SaveSettings();
       if (!g_allProfiles.empty() &&

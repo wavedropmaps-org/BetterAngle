@@ -41,6 +41,7 @@ int g_screenIndex = 0;
 std::atomic<int> g_displayChangeGen{0};
 std::atomic<int> g_hudDecimalPlaces{2}; // Default to 2 decimal places as requested
 std::atomic<bool> g_hudSmoothingEnabled(true);
+std::atomic<bool> g_useDirect2D(true);
 std::atomic<float> g_interpolatedAngle(0.0f);
 
 Profile g_currentProfile;

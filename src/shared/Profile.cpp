@@ -111,6 +111,12 @@ bool Profile::Load(const std::wstring &path) {
     hudSmoothing = true;
   }
 
+  if (content.find("\"useDirect2D\"") != std::string::npos) {
+    useDirect2D = extractDouble("useDirect2D") > 0.5;
+  } else {
+    useDirect2D = true;
+  }
+
   // Load Keybinds
   keybinds.toggleMod = (UINT)extractDouble("kb_toggleMod");
   keybinds.toggleKey = (UINT)extractDouble("kb_toggleKey");
@@ -254,6 +260,7 @@ bool Profile::Save(const std::wstring &path) {
   ss << "  \"atomicShield\": " << (atomicShield ? 1 : 0) << ",\n";
   ss << "  \"directHardwareMode\": " << (directHardwareMode ? 1 : 0) << ",\n";
   ss << "  \"hudSmoothing\": " << (hudSmoothing ? 1 : 0) << ",\n";
+  ss << "  \"useDirect2D\": " << (useDirect2D ? 1 : 0) << ",\n";
   ss << "  \"kb_toggleMod\": " << keybinds.toggleMod << ",\n";
   ss << "  \"kb_toggleKey\": " << keybinds.toggleKey << ",\n";
   ss << "  \"kb_roiMod\": " << keybinds.roiMod << ",\n";
