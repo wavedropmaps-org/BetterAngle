@@ -433,8 +433,8 @@ LRESULT CALLBACK MsgWndProc(HWND hWnd, UINT message, WPARAM wParam,
 }
 
 // Helper function to check mouse button hotkeys and trigger corresponding actions
-static void CheckMouseButtonHotkeys() {
-  if (g_keybindAssignmentActive) {
+static void CheckMouseButtonHotkeys(HWND hWnd) {
+  if (g_keybindAssignmentActive || !hWnd) {
     return;
   }
 
@@ -475,7 +475,7 @@ static void CheckMouseButtonHotkeys() {
     }
 
     // Modifiers match and button is pressed - trigger the action
-    PostMessage(GetForegroundWindow() == GetFocus() ? GetFocus() : NULL, WM_HOTKEY, id, 0);
+    PostMessage(hWnd, WM_HOTKEY, id, 0);
   }
 }
 
@@ -494,7 +494,7 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
 
   case WM_TIMER:
     if (wParam == 1) {
-      CheckMouseButtonHotkeys();
+      CheckMouseButtonHotkeys(hWnd);
     }
     return 0;
 
