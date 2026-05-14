@@ -175,8 +175,11 @@ Item {
                                     color: "#1c1c2e"
                                     radius: 4
                                     border.color: "#333"
-                                    }
-                    
+                                }
+                            }
+                        }
+                    }
+
                     Column {
                         spacing: 4
                         width: parent.width
@@ -1283,10 +1286,41 @@ Item {
 
                     Item { height: 10 }
 
+                    // ENGINE SETTINGS STATUS
+                    Text { text: "ENGINE SETTINGS"; color: "#666"; font.pixelSize: 11; font.bold: true }
+                    Text {
+                        text: "Direct Hardware Mode: ON | HUD Smoothing: ON | Atomic Shield: ON"
+                        color: "#00ffaa"; font.pixelSize: 10; width: parent.width; wrapMode: Text.WordWrap
+                    }
+
+                    Item { height: 5 }
+
+                    // HUD POSITION & MONITOR
+                    Text { text: "HUD & MONITOR INFO"; color: "#666"; font.pixelSize: 11; font.bold: true }
+                    RowLayout { width: parent.width
+                        Text { text: "HUD Position:"; color: "#aaa"; font.pixelSize: 11; Layout.fillWidth: true }
+                        Text { text: "(" + backend.hudX + ", " + backend.hudY + ")"; color: "#88ccff"; font.bold: true; font.pixelSize: 11 }
+                    }
+                    RowLayout { width: parent.width
+                        Text { text: "Active Monitor:"; color: "#aaa"; font.pixelSize: 11; Layout.fillWidth: true }
+                        Text { text: backend.screenIndex; color: "#88ccff"; font.bold: true; font.pixelSize: 11 }
+                    }
+
+                    Item { height: 5 }
+
+                    // SELECTION STATE
+                    Text { text: "SELECTION STATE"; color: "#666"; font.pixelSize: 11; font.bold: true }
+                    Text {
+                        text: "Current State: " + (backend.isDiving ? "DIVING" : "GLIDING")
+                        color: backend.isDiving ? "#ff8844" : "#88ff88"; font.pixelSize: 10; width: parent.width; wrapMode: Text.WordWrap
+                    }
+
+                    Item { height: 10 }
+
                     Text { text: "PRO TIPS & SHORTCUTS"; color: "#666"; font.pixelSize: 11; font.bold: true }
 
                     Text {
-                        text: "ROI Cancel: Press ROI key or Esc when in selection stages."
+                        text: "ROI Cancel: Press ROI key or Esc when in selection stages.\nCustom Keybinds: Works with Mouse1-Mouse5 and keyboard keys.\nEngine Settings: All optimizations (Direct Hardware, Smoothing, Shield) are always ON."
                         color: "#aaa"; font.pixelSize: 11; width: parent.width; wrapMode: Text.WordWrap
                     }
                 }

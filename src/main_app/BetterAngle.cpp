@@ -438,6 +438,9 @@ static void CheckMouseButtonHotkeys() {
     return;
   }
 
+  // Allow mouse button hotkeys during selection overlay (they may trigger selection actions)
+  // This ensures custom keybinds work during ROI/color selection
+
   for (int id = 1; id <= 4; id++) {
     UINT mouseBtn = g_mouseButtonKeybinds[id].load(std::memory_order_acquire);
     if (mouseBtn == 0) continue; // Not a mouse button hotkey
