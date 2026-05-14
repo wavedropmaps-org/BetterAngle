@@ -17,7 +17,7 @@ Item {
         width: parent.width
         background: Rectangle { color: "#0d0d12" }
         onCurrentIndexChanged: {
-            if (currentIndex == 4) { // UPDATES tab
+            if (currentIndex == 2) { // UPDATES tab
                 if (!backend.hasCheckedForUpdates) {
                     backend.checkForUpdates()
                 }
@@ -41,11 +41,6 @@ Item {
         }
         TabButton {
             text: qsTr("DEBUG")
-            contentItem: Text { text: parent.text; color: parent.checked ? "#00ffcc" : "#888"; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-            background: Rectangle { color: parent.checked ? "#1a1a2e" : "transparent" }
-        }
-        TabButton {
-            text: qsTr("ENGINE")
             contentItem: Text { text: parent.text; color: parent.checked ? "#00ffcc" : "#888"; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
             background: Rectangle { color: parent.checked ? "#1a1a2e" : "transparent" }
         }
@@ -242,39 +237,6 @@ Item {
                         }
                     }
 
-                    RowLayout {
-                        spacing: 10
-                        Switch {
-                            id: shieldSwitch
-                            checked: backend.atomicShield
-                            onCheckedChanged: backend.atomicShield = checked
-                            Connections {
-                                target: backend
-                                onProfileChanged: shieldSwitch.checked = backend.atomicShield
-                            }
-                        }
-                        Column {
-                            Text { text: "Atomic Shield (Smoothing)"; color: "white"; font.pixelSize: 13 }
-                            Text { text: "Prevents lock flickering during lag/particle stutters"; color: "#666"; font.pixelSize: 11 }
-                        }
-                    }
-
-                    RowLayout {
-                        spacing: 10
-                        Switch {
-                            id: smoothingSwitch
-                            checked: backend.hudSmoothing
-                            onCheckedChanged: backend.hudSmoothing = checked
-                            Connections {
-                                target: backend
-                                onProfileChanged: smoothingSwitch.checked = backend.hudSmoothing
-                            }
-                        }
-                        Column {
-                            Text { text: "Visual HUD Smoothing"; color: "white"; font.pixelSize: 13 }
-                            Text { text: "Makes decimals glide fluidly using sub-pixel interpolation"; color: "#666"; font.pixelSize: 11 }
-                        }
-                    }
                 }
             }
         }
@@ -1331,45 +1293,5 @@ Item {
             }
         }
 
-        // ─── ENGINE ────────────────────────────────────────────────
-        Rectangle {
-            color: "#0d0d12"
-            Column {
-                anchors { fill: parent; margins: 20 }
-                spacing: 15
-
-                Text {
-                    text: "Engine Settings"
-                    color: "white"
-                    font.pixelSize: 18
-                    font.bold: true
-                }
-
-                RowLayout {
-                    spacing: 10
-                    Switch {
-                        id: hardwareSwitch
-                        checked: backend.directHardwareMode
-                        onCheckedChanged: backend.directHardwareMode = checked
-                        Connections {
-                            target: backend
-                            onProfileChanged: hardwareSwitch.checked = backend.directHardwareMode
-                        }
-                    }
-                    Column {
-                        Text {
-                            text: "Direct Hardware Input"
-                            color: "white"
-                            font.pixelSize: 13
-                        }
-                        Text {
-                            text: "Use raw hardware scancodes for improved input fidelity"
-                            color: "#666"
-                            font.pixelSize: 11
-                        }
-                    }
-                }
-            }
-        }
     }
 }

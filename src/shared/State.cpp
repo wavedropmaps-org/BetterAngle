@@ -24,7 +24,7 @@ std::atomic<bool> g_showDebugOverlay(false);
 std::atomic<ULONGLONG> g_mouseSuspendedUntil(0);
 std::atomic<int> g_lockTriggerReason(0);
 std::atomic<bool> g_atomicShieldEnabled(true);
-std::atomic<bool> g_directHardwareModeEnabled(false);
+std::atomic<bool> g_directHardwareModeEnabled(true);
 std::atomic<ULONGLONG> g_lastValidMatchTime(0);
 std::atomic<int> g_lockCount(0);
 std::atomic<bool> g_blockInputActive(false);
