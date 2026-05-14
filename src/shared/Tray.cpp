@@ -7,10 +7,15 @@ void AddSystrayIcon(HWND hwnd, HINSTANCE hInstance) {
     nid.uID = 1;
     nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP | NIF_SHOWTIP;
     nid.uCallbackMessage = WM_TRAYICON;
-    nid.hIcon = LoadIcon(hInstance, MAKEINTRESOURCE(1)); // Use consistent hInstance
+    nid.hIcon = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_ICON1)); // Load BetterAngle icon from resources
 
     if (!nid.hIcon) {
-        // Fallback to default application icon if resource fails to load
+        // Fallback to application icon if BetterAngle icon resource fails
+        nid.hIcon = LoadIcon(hInstance, MAKEINTRESOURCE(101));
+    }
+
+    if (!nid.hIcon) {
+        // Last resort fallback to Windows default icon
         nid.hIcon = LoadIcon(NULL, IDI_APPLICATION);
     }
 

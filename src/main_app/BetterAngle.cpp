@@ -803,8 +803,23 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
         }
 
         if (g_isDraggingHUD && lDown) {
-          g_hudX = g_dragStartHUD.x + (pt.x - g_dragStartMouse.x);
-          g_hudY = g_dragStartHUD.y + (pt.y - g_dragStartMouse.y);
+          int newX = g_dragStartHUD.x + (pt.x - g_dragStartMouse.x);
+          int newY = g_dragStartHUD.y + (pt.y - g_dragStartMouse.y);
+          int deltaX = newX - g_hudX;
+          int deltaY = newY - g_hudY;
+          g_hudX = newX;
+          g_hudY = newY;
+
+          // Move the control panel along with the HUD
+          if (g_hPanel && IsWindow(g_hPanel)) {
+            RECT panelRect;
+            GetWindowRect(g_hPanel, &panelRect);
+            SetWindowPos(g_hPanel, NULL,
+                        panelRect.left + deltaX,
+                        panelRect.top + deltaY,
+                        0, 0, SWP_NOSIZE | SWP_NOZORDER);
+          }
+
           InvalidateRect(hWnd, NULL, FALSE);
         }
 
