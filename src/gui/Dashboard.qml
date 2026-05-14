@@ -240,10 +240,6 @@ Item {
                         }
                     }
 
-                }
-            }
-        }
-
                     Text { text: "TRIGGER CALIBRATION (%)"; color: "#666"; font.pixelSize: 12; topPadding: 10 }
                     RowLayout {
                         Text { text: "Dive to glide threshold match limit %"; color: "white"; Layout.preferredWidth: 230; font.pixelSize: 12 }

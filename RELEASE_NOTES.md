@@ -1,5 +1,5 @@
 ### BetterAngle Pro v5.5.278
-- Automated build release.
+- **Fix: QML Structure Error**. Corrected Dashboard.qml layout structure where content was orphaned outside parent containers. Relocated TRIGGER CALIBRATION, TARGET COLOR SETTINGS, and HOTKEY CONFIGURATION sections into proper Column hierarchy to fix "Failed to load dashboard UI" error.
 
 ### BetterAngle Pro v5.5.277
 - **Fix: Duplicate WM_TIMER Handler**. Removed duplicate case WM_TIMER statement causing C2196 compilation error. Consolidated mouse button hotkey polling into unified timer handler.
