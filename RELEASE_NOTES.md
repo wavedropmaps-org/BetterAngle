@@ -1,5 +1,5 @@
 ### BetterAngle Pro v5.5.276
-- Automated build release.
+- **Fix: VK_XBUTTON SDK Compatibility**. Added fallback definitions for X mouse button constants to ensure compilation on all Windows SDK versions. Resolves build failures when VK_XBUTTON1/VK_XBUTTON2 are not defined in the system headers.
 
 ### BetterAngle Pro v5.5.275
 - Automated build release.

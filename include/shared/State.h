@@ -9,6 +9,14 @@
 #include <vector>
 #include <windows.h>
 
+// Fallback definitions for X mouse button codes (SDK compatibility)
+#ifndef VK_XBUTTON1
+#define VK_XBUTTON1 0x05
+#endif
+#ifndef VK_XBUTTON2
+#define VK_XBUTTON2 0x06
+#endif
+
 std::wstring GetAppRootPath();
 std::wstring GetProfilesPath();
 
