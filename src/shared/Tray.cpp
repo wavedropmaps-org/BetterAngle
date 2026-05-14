@@ -1,6 +1,11 @@
 #include "shared/Tray.h"
 #include <iostream>
 
+// Resource ID for the icon defined in resource.rc
+#ifndef IDI_ICON1
+#define IDI_ICON1 101
+#endif
+
 void AddSystrayIcon(HWND hwnd, HINSTANCE hInstance) {
     NOTIFYICONDATA nid = { sizeof(NOTIFYICONDATA) };
     nid.hWnd = hwnd;

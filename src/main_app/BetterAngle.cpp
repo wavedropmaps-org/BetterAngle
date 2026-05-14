@@ -492,12 +492,6 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
     LOG_INFO("System tray icon added from WM_CREATE");
     return 0;
 
-  case WM_TIMER:
-    if (wParam == 1) {
-      CheckMouseButtonHotkeys(hWnd);
-    }
-    return 0;
-
   case WM_HOTKEY:
     // Ignore hotkey actions when user is assigning a keybind in settings
     if (g_keybindAssignmentActive) {
@@ -781,6 +775,8 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
       return 0;
     }
     if (wParam == 1) { // 60fps HUD / Input processing timer
+      CheckMouseButtonHotkeys(hWnd);
+
       static ULONGLONG s_bootTime = GetTickCount64();
       if (GetTickCount64() - s_bootTime < 2500)
         return 0;

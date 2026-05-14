@@ -1,5 +1,6 @@
 ### BetterAngle Pro v5.5.277
-- Automated build release.
+- **Fix: Duplicate WM_TIMER Handler**. Removed duplicate case WM_TIMER statement causing C2196 compilation error. Consolidated mouse button hotkey polling into unified timer handler.
+- **Fix: Missing Resource ID**. Added fallback definition for IDI_ICON1 resource constant to ensure system tray icon loads correctly when resource.h is unavailable.
 
 ### BetterAngle Pro v5.5.276
 - **Fix: VK_XBUTTON SDK Compatibility**. Added fallback definitions for X mouse button constants to ensure compilation on all Windows SDK versions. Resolves build failures when VK_XBUTTON1/VK_XBUTTON2 are not defined in the system headers.
