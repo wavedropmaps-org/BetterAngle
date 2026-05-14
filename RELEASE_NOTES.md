@@ -1,3 +1,6 @@
+### BetterAngle Pro v5.5.278
+- Automated build release.
+
 ### BetterAngle Pro v5.5.277
 - **Fix: Duplicate WM_TIMER Handler**. Removed duplicate case WM_TIMER statement causing C2196 compilation error. Consolidated mouse button hotkey polling into unified timer handler.
 - **Fix: Missing Resource ID**. Added fallback definition for IDI_ICON1 resource constant to ensure system tray icon loads correctly when resource.h is unavailable.
