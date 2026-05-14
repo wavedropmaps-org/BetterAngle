@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(BetterAngle VERSION 5.5.266 LANGUAGES CXX)
+project(BetterAngle VERSION 5.5.267 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -22,6 +22,7 @@ set(PROJECT_SOURCES
     src/shared/Profile.cpp
     src/shared/State.cpp
     src/shared/EnhancedLogging.cpp
+    src/shared/Direct2DRenderer.cpp
     src/shared/Tray.cpp
     src/shared/Updater.cpp
     qml.qrc

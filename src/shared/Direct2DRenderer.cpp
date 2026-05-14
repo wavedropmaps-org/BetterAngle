@@ -14,7 +14,7 @@ bool Direct2DRenderer::Initialize(HWND hWnd) {
     HRESULT hr = D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, &m_pDirect2dFactory);
     if (FAILED(hr)) return false;
 
-    hr = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(m_pDWriteFactory), reinterpret_cast<IUnknown**>(&m_pDWriteFactory));
+    hr = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory), reinterpret_cast<IUnknown**>(&m_pDWriteFactory));
     if (FAILED(hr)) return false;
 
     return SUCCEEDED(CreateDeviceResources(hWnd));

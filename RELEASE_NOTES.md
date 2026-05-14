@@ -1,3 +1,7 @@
+### BetterAngle Pro v5.5.267
+- **Fix: Direct2D Build Restoration**. Resolved compiler and linker errors in the hardware-accelerated rendering engine.
+- **Maintenance: Proper Source Registration**. Fixed CMake configuration to ensure the new renderer is correctly compiled.
+
 ### BetterAngle Pro v5.5.266
 - Automated build release.
 

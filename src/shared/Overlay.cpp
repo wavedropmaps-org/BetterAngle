@@ -3,6 +3,7 @@
 #include "shared/Input.h"
 #include "shared/Logic.h"
 #include "shared/State.h"
+#include "shared/Direct2DRenderer.h"
 #include <gdiplus.h>
 #include <iomanip>
 #include <iostream>
