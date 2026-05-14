@@ -44,6 +44,10 @@ extern std::mutex g_blockInputMutex;
 
 extern std::string g_lastVersionRun;
 
+// Mouse button keybind tracking for polling-based hotkey detection
+extern std::atomic<UINT> g_mouseButtonKeybinds[6]; // Index 0 unused, 1-4 for toggle/roi/cross/zero, 5 unused
+extern std::atomic<UINT> g_mouseButtonModifiers[6];
+
 // Version numbers ? updated by scripts/bump_version.ps1
 #ifndef V_MAJ
 #define V_MAJ 5

@@ -342,6 +342,18 @@ bool RefreshHotkeys(HWND hWnd) {
                                     const wchar_t *name) -> bool {
     if (vk == 0) {
       // Zero key means hotkey is disabled
+      g_mouseButtonKeybinds[id].store(0, std::memory_order_release);
+      g_mouseButtonModifiers[id].store(0, std::memory_order_release);
+      return true;
+    }
+
+    // Check if this is a mouse button code (0x01=MOUSE1, 0x02=MOUSE2, 0x04=MOUSE3, 0x05=MOUSE4, 0x06=MOUSE5)
+    bool isMouseButton = (vk == 0x01 || vk == 0x02 || vk == 0x04 || vk == 0x05 || vk == 0x06);
+
+    if (isMouseButton) {
+      // Store mouse button hotkey for polling-based detection instead of RegisterHotKey
+      g_mouseButtonKeybinds[id].store(vk, std::memory_order_release);
+      g_mouseButtonModifiers[id].store(mod, std::memory_order_release);
       return true;
     }
 
@@ -356,6 +368,9 @@ bool RefreshHotkeys(HWND hWnd) {
                                        std::to_wstring(err) + L")"});
       return false;
     }
+    // Clear any mouse button binding for this ID since we just registered a normal key
+    g_mouseButtonKeybinds[id].store(0, std::memory_order_release);
+    g_mouseButtonModifiers[id].store(0, std::memory_order_release);
     return true;
   };
 
@@ -417,15 +432,67 @@ LRESULT CALLBACK MsgWndProc(HWND hWnd, UINT message, WPARAM wParam,
   return DefWindowProc(hWnd, message, wParam, lParam);
 }
 
+// Helper function to check mouse button hotkeys and trigger corresponding actions
+static void CheckMouseButtonHotkeys() {
+  if (g_keybindAssignmentActive) {
+    return;
+  }
+
+  for (int id = 1; id <= 4; id++) {
+    UINT mouseBtn = g_mouseButtonKeybinds[id].load(std::memory_order_acquire);
+    if (mouseBtn == 0) continue; // Not a mouse button hotkey
+
+    UINT mod = g_mouseButtonModifiers[id].load(std::memory_order_acquire);
+
+    // Map mouse button codes to virtual key codes for polling
+    UINT vk = 0;
+    switch (mouseBtn) {
+      case 0x01: vk = VK_LBUTTON; break;
+      case 0x02: vk = VK_RBUTTON; break;
+      case 0x04: vk = VK_MBUTTON; break;
+      case 0x05: vk = VK_XBUTTON1; break;
+      case 0x06: vk = VK_XBUTTON2; break;
+      default: continue;
+    }
+
+    // Check if mouse button is pressed
+    if ((GetAsyncKeyState(vk) & 0x8000) == 0) continue; // Button not pressed
+
+    // Check modifiers
+    bool ctrlPressed = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
+    bool shiftPressed = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
+    bool altPressed = (GetAsyncKeyState(VK_MENU) & 0x8000) != 0;
+
+    bool ctrlRequired = (mod & MOD_CONTROL) != 0;
+    bool shiftRequired = (mod & MOD_SHIFT) != 0;
+    bool altRequired = (mod & MOD_ALT) != 0;
+
+    if (ctrlRequired != ctrlPressed || shiftRequired != shiftPressed || altRequired != altPressed) {
+      continue; // Modifiers don't match
+    }
+
+    // Modifiers match and button is pressed - trigger the action
+    PostMessage(GetForegroundWindow() == GetFocus() ? GetFocus() : NULL, WM_HOTKEY, id, 0);
+  }
+}
+
 // HUD Window Procedure
 LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
                             LPARAM lParam) {
   switch (message) {
   case WM_CREATE:
     RefreshHotkeys(hWnd);
+    // Set up a timer to check mouse button hotkeys
+    SetTimer(hWnd, 1, 50, NULL); // Check every 50ms
     // Initialize system tray icon when window is fully created
     AddSystrayIcon(hWnd, GetModuleHandle(NULL));
     LOG_INFO("System tray icon added from WM_CREATE");
+    return 0;
+
+  case WM_TIMER:
+    if (wParam == 1) {
+      CheckMouseButtonHotkeys();
+    }
     return 0;
 
   case WM_HOTKEY:

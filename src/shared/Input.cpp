@@ -150,9 +150,21 @@ void StartPollingThread() {
         g_physicalKeys[vk].store((GetAsyncKeyState(vk) & 0x8000) != 0,
                                  std::memory_order_relaxed);
       }
-      // Also poll LBUTTON for HUD dragging (fixes legacy bug)
+      // Poll all mouse buttons for custom keybinds
       g_physicalKeys[VK_LBUTTON].store(
           (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0,
+          std::memory_order_relaxed);
+      g_physicalKeys[VK_RBUTTON].store(
+          (GetAsyncKeyState(VK_RBUTTON) & 0x8000) != 0,
+          std::memory_order_relaxed);
+      g_physicalKeys[VK_MBUTTON].store(
+          (GetAsyncKeyState(VK_MBUTTON) & 0x8000) != 0,
+          std::memory_order_relaxed);
+      g_physicalKeys[VK_XBUTTON1].store(
+          (GetAsyncKeyState(VK_XBUTTON1) & 0x8000) != 0,
+          std::memory_order_relaxed);
+      g_physicalKeys[VK_XBUTTON2].store(
+          (GetAsyncKeyState(VK_XBUTTON2) & 0x8000) != 0,
           std::memory_order_relaxed);
       Sleep(1);
     }
