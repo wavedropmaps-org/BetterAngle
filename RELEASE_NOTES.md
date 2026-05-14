@@ -1,3 +1,8 @@
+### BetterAngle Pro v5.5.270
+- **Fix: ROI Selection Restoration**. Resolved the "double-offset" bug that caused coordinate mismatches on secondary monitors.
+- **Feature: Auto-Monitor Detection**. The ROI selection tool now automatically detects which monitor you are clicking on and updates the profile settings instantly.
+- **Accuracy: Coordinate Normalization**. Fixed the Stage 2 color picker to correctly map virtual screen space to physical pixels, ensuring 100% target color accuracy.
+
 ### BetterAngle Pro v5.5.265
 - Automated build release.
 
