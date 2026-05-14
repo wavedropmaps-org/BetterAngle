@@ -1,3 +1,6 @@
+### BetterAngle Pro v5.5.279
+- Automated build release.
+
 ### BetterAngle Pro v5.5.278
 - **Fix: QML Structure Error**. Corrected Dashboard.qml layout structure where content was orphaned outside parent containers. Relocated TRIGGER CALIBRATION, TARGET COLOR SETTINGS, and HOTKEY CONFIGURATION sections into proper Column hierarchy to fix "Failed to load dashboard UI" error.
 
