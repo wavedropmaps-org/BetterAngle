@@ -1034,10 +1034,28 @@ void BetterAngleBackend::saveKeybinds() {
 
 void BetterAngleBackend::startKeybindAssignment() {
   g_keybindAssignmentActive = true;
+  // Critical: release the OS hotkey registrations so the user's keypress
+  // (e.g., F10) reaches Qt's keyboard event pipeline instead of being eaten
+  // by Windows as a WM_HOTKEY. Without this the TextField sits empty no
+  // matter what the user presses.
+  if (g_hHUD) {
+    for (int i = 1; i <= 6; i++) {
+      UnregisterHotKey(g_hHUD, i);
+    }
+    for (int id = 1; id <= 4; id++) {
+      g_mouseButtonKeybinds[id].store(0, std::memory_order_release);
+      g_mouseButtonModifiers[id].store(0, std::memory_order_release);
+    }
+  }
 }
 
 void BetterAngleBackend::endKeybindAssignment() {
   g_keybindAssignmentActive = false;
+  // Force re-registration: the keybinds may or may not have changed, but
+  // either way the hotkeys were unregistered when capture started.
+  if (g_hHUD) {
+    RefreshHotkeys(g_hHUD, /*force=*/true);
+  }
 }
 
 void NotifyBackendUpdateStatusChanged() {

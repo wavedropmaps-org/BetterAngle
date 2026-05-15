@@ -60,7 +60,7 @@ extern std::atomic<UINT> g_mouseButtonModifiers[6];
 #ifndef V_MAJ
 #define V_MAJ 5
 #define V_MIN 5
-#define V_PAT 279
+#define V_PAT 280
 #endif
 
 #define VERSION_STR APP_STR_Y(V_MAJ) "." APP_STR_Y(V_MIN) "." APP_STR_Y(V_PAT)
@@ -123,7 +123,7 @@ extern HWND g_hHUD;
 extern HWND g_hPanel;
 extern HWND g_hMsgWnd;
 
-bool RefreshHotkeys(HWND hWnd);
+bool RefreshHotkeys(HWND hWnd, bool force = false);
 extern std::atomic<bool> g_forceRedraw;
 extern std::atomic<bool> g_keybindAssignmentActive;
 void NotifyBackendCrosshairChanged();

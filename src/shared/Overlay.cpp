@@ -75,7 +75,7 @@ static bool CheckFortniteProcessFast() {
   return found;
 }
 
-void DrawOverlay(HWND hwnd, double angle, bool showCrosshair) {
+void DrawOverlay(HWND hwnd, double angle, bool showCrosshair, bool overlayVisible) {
   TickFPS();
 
   RECT rect;
@@ -84,6 +84,48 @@ void DrawOverlay(HWND hwnd, double angle, bool showCrosshair) {
   int sh = rect.bottom - rect.top;
   if (sw <= 0 || sh <= 0)
     return;
+
+  // Suspend mode: Fortnite not focused and no dashboard interaction.
+  // Render a fully transparent frame so the HUD + crosshair vanish but the
+  // layered window stays alive (still hit-testable for drag if needed).
+  if (!overlayVisible && g_currentSelection == NONE) {
+    HDC hdcScrLocal = GetDC(NULL);
+    static HDC s_blankMemDc = NULL;
+    static HBITMAP s_blankBmp = NULL;
+    static void *s_blankBits = NULL;
+    static int s_blankW = 0, s_blankH = 0;
+    if (!s_blankMemDc)
+      s_blankMemDc = CreateCompatibleDC(hdcScrLocal);
+    if (sw != s_blankW || sh != s_blankH) {
+      if (s_blankBmp)
+        DeleteObject(s_blankBmp);
+      BITMAPINFO bi = {0};
+      bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+      bi.bmiHeader.biWidth = sw;
+      bi.bmiHeader.biHeight = -sh;
+      bi.bmiHeader.biPlanes = 1;
+      bi.bmiHeader.biBitCount = 32;
+      bi.bmiHeader.biCompression = BI_RGB;
+      s_blankBmp = CreateDIBSection(hdcScrLocal, &bi, DIB_RGB_COLORS,
+                                    &s_blankBits, NULL, 0);
+      s_blankW = sw;
+      s_blankH = sh;
+    }
+    if (s_blankBits)
+      memset(s_blankBits, 0, sw * sh * 4);
+    HGDIOBJ hOldBlank = SelectObject(s_blankMemDc, s_blankBmp);
+    POINT ptSrc0 = {0, 0};
+    RECT wr;
+    GetWindowRect(hwnd, &wr);
+    POINT ptWin0 = {wr.left, wr.top};
+    SIZE sz0 = {sw, sh};
+    BLENDFUNCTION blendBlank = {AC_SRC_OVER, 0, 255, AC_SRC_ALPHA};
+    UpdateLayeredWindow(hwnd, hdcScrLocal, &ptWin0, &sz0, s_blankMemDc, &ptSrc0,
+                        0, &blendBlank, ULW_ALPHA);
+    SelectObject(s_blankMemDc, hOldBlank);
+    ReleaseDC(NULL, hdcScrLocal);
+    return;
+  }
 
   static HDC hdcMem = NULL;
   static HBITMAP hbmMem = NULL;

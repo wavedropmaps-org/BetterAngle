@@ -73,6 +73,14 @@ void FocusMonitorThread() {
 
       LOG_INFO("Alt-tab cooldown active (200ms BlockInput)");
     }
+    // Any focus transition: ask the HUD thread to re-evaluate which hotkeys
+    // should be registered (Fortnite-focused vs not). WM_APP+1 keeps the call
+    // on the HUD's owning thread, which is required for RegisterHotKey.
+    if (lastFortniteFocused != currentFortniteFocused) {
+      if (g_hHUD) {
+        PostMessage(g_hHUD, WM_APP + 1, currentFortniteFocused ? 1 : 0, 0);
+      }
+    }
     lastFortniteFocused = currentFortniteFocused;
     _mm_pause(); // Zero-latency spin-wait (nanosecond response)
   }
@@ -294,20 +302,28 @@ static std::wstring GetLastErrorString() {
 }
 
 // Refreshes all global hotkeys for the HUD window
-bool RefreshHotkeys(HWND hWnd) {
+bool RefreshHotkeys(HWND hWnd, bool force) {
   if (!hWnd)
+    return false;
+
+  // If a keybind is currently being assigned in the UI, do nothing. All
+  // hotkeys were already unregistered in startKeybindAssignment and will be
+  // re-registered by endKeybindAssignment via a forced refresh.
+  if (g_keybindAssignmentActive.load())
     return false;
 
   // Cache the current keybinds to avoid unnecessary re-registration
   static Keybinds lastKeybinds = {};
   static int lastProfileIdx = -1;
+  static bool lastFortniteFocused = false;
 
   if (g_allProfiles.empty())
     return false;
 
   Profile &p = g_allProfiles[g_selectedProfileIdx];
+  bool fortniteFocused = g_fortniteFocusedCache.load();
 
-  // Check if keybinds have actually changed
+  // Check if anything that affects registration has changed
   bool keybindsChanged = (g_selectedProfileIdx != lastProfileIdx) ||
                          (p.keybinds.toggleMod != lastKeybinds.toggleMod ||
                           p.keybinds.toggleKey != lastKeybinds.toggleKey) ||
@@ -316,10 +332,10 @@ bool RefreshHotkeys(HWND hWnd) {
                          (p.keybinds.crossMod != lastKeybinds.crossMod ||
                           p.keybinds.crossKey != lastKeybinds.crossKey) ||
                          (p.keybinds.zeroMod != lastKeybinds.zeroMod ||
-                          p.keybinds.zeroKey != lastKeybinds.zeroKey);
+                          p.keybinds.zeroKey != lastKeybinds.zeroKey) ||
+                         (fortniteFocused != lastFortniteFocused);
 
-  if (!keybindsChanged) {
-    // Keybinds haven't changed, no need to re-register
+  if (!keybindsChanged && !force) {
     return true;
   }
 
@@ -374,14 +390,30 @@ bool RefreshHotkeys(HWND hWnd) {
     return true;
   };
 
+  // Dashboard toggle (id 1) is always registered so the user can open the
+  // dashboard from anywhere.
   ok &= registerWithErrorCheck(1, p.keybinds.toggleMod, p.keybinds.toggleKey,
                                L"Toggle Panel");
-  ok &= registerWithErrorCheck(2, p.keybinds.roiMod, p.keybinds.roiKey,
-                               L"ROI Select");
-  ok &= registerWithErrorCheck(3, p.keybinds.crossMod, p.keybinds.crossKey,
-                               L"Crosshair Toggle");
-  ok &= registerWithErrorCheck(4, p.keybinds.zeroMod, p.keybinds.zeroKey,
-                               L"Zero Angle");
+
+  // ROI / Crosshair / Zero hotkeys (ids 2-4) only bind when Fortnite is the
+  // foreground window. While Fortnite is not focused these keys pass through
+  // to the OS so the user can use them normally in other apps.
+  if (fortniteFocused) {
+    ok &= registerWithErrorCheck(2, p.keybinds.roiMod, p.keybinds.roiKey,
+                                 L"ROI Select");
+    ok &= registerWithErrorCheck(3, p.keybinds.crossMod, p.keybinds.crossKey,
+                                 L"Crosshair Toggle");
+    ok &= registerWithErrorCheck(4, p.keybinds.zeroMod, p.keybinds.zeroKey,
+                                 L"Zero Angle");
+  } else {
+    // Clear any stored mouse-button bindings for these ids so the polling
+    // loop doesn't fire them either.
+    for (int id = 2; id <= 4; id++) {
+      g_mouseButtonKeybinds[id].store(0, std::memory_order_release);
+      g_mouseButtonModifiers[id].store(0, std::memory_order_release);
+    }
+  }
+  lastFortniteFocused = fortniteFocused;
 
   // Log failures
   if (!failedHotkeys.empty()) {
@@ -490,6 +522,12 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
     // Initialize system tray icon when window is fully created
     AddSystrayIcon(hWnd, GetModuleHandle(NULL));
     LOG_INFO("System tray icon added from WM_CREATE");
+    return 0;
+
+  case WM_APP + 1:
+    // Fortnite focus changed: re-evaluate which hotkeys should be registered.
+    // Force = true because the keybinds themselves haven't changed.
+    RefreshHotkeys(hWnd, /*force=*/true);
     return 0;
 
   case WM_HOTKEY:
@@ -841,26 +879,23 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
       g_isCursorVisible = IsCursorCurrentlyVisible();
       float ang = g_logic.GetAngle();
 
-      // Sub-Pixel Interpolation (LERP)
-      if (g_hudSmoothingEnabled.load()) {
-        float current = g_interpolatedAngle.load();
-        float diff = ang - current;
-        // Optimization: Snap if difference is huge (> 10 degrees)
-        if (std::abs(diff) > 10.0f) {
-          g_interpolatedAngle = ang;
-        } else {
-          g_interpolatedAngle = current + (diff * 0.15f);
-        }
-      } else {
-        g_interpolatedAngle = ang;
-      }
+      // Direct assignment: no smoothing. The angle value reflects the raw
+      // mouse-delta accumulator on every frame for zero perceived delay.
+      g_interpolatedAngle = ang;
 
       // Clear the forced redraw flag occasionally set elsewhere
       g_forceRedraw.store(false);
 
-      // Unconditionally draw overlay at 60FPS to keep Debug stats (FPS/Delay)
-      // synced live
-      DrawOverlay(hWnd, g_interpolatedAngle.load(), g_showCrosshair);
+      // Suspend the overlay (HUD + crosshair) when Fortnite is not the
+      // foreground window. The dashboard panel being open also keeps it
+      // visible so the user can reposition the HUD or pick crosshair colors.
+      bool fortniteFocused = g_fortniteFocusedCache.load();
+      bool panelVisible = (g_hPanel && IsWindow(g_hPanel) && IsWindowVisible(g_hPanel));
+      bool overlayVisible = fortniteFocused || panelVisible || g_isDraggingHUD ||
+                            (g_currentSelection != NONE);
+
+      DrawOverlay(hWnd, g_interpolatedAngle.load(), g_showCrosshair,
+                  overlayVisible);
     } else if (wParam == 2) { // 30s Auto-Save Periodic Timer
       SaveSettings();
       if (!g_allProfiles.empty() &&

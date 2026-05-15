@@ -1,3 +1,9 @@
+### BetterAngle Pro v5.5.280
+- **Fix: Crosshair / HUD now hides on Alt-Tab**. When Fortnite loses focus the overlay paints fully transparent (HUD + crosshair both invisible). When Fortnite regains focus the overlay restores to the user's last toggle state - acts as a clean suspend.
+- **Fix: Keybind capture in dashboard**. `startKeybindAssignment` now unregisters all OS hotkeys so keypresses (e.g. F10) reach Qt's keyboard pipeline. `endKeybindAssignment` force-refreshes the registration. Previously the registered hotkey ate the keypress before Qt could see it, so the TextField sat empty.
+- **Feature: Focus-gated hotkeys**. ROI Select, Crosshair Toggle, and Zero Counter hotkeys are now only registered with the OS while Fortnite is the foreground window. When Fortnite is not focused, the keys pass through to the OS so they can be used in other applications. Dashboard toggle stays bound everywhere.
+- **Fix: Decimal angle latency**. Removed the LERP smoothing (factor 0.15 at 60Hz, ~500ms to converge) from the HUD pipeline. The decimal value now reflects the raw mouse-delta accumulator on every frame, no perceived delay.
+
 ### BetterAngle Pro v5.5.279
 - Automated build release.
 
