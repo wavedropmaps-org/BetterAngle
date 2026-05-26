@@ -1,8 +1,8 @@
 ### BetterAngle Pro v5.5.285
-- Automated build release.
+- **Feature: Dashboard Diagnostic Toggle Buttons**. The 3 auto-mantle diagnostic toggles (Raw Input Sink, Topmost Overlay, 1ms Timer) are now visual switch buttons at the bottom of the Debug tab. No more editing `settings.json` by hand — just flip the switch, restart, and test. Each toggle shows red when active (feature disabled) and green when normal, with inline explanations.
 
 ### BetterAngle Pro v5.5.284
-- **Feature: In-Game HUD Repositioning (Ctrl + Drag)**. You can now move the decimal angle box while Fortnite is running ? no need to alt-tab. Hold `Ctrl` and click-and-drag the HUD overlay to any position on screen. Releasing the mouse automatically saves the new position. The HUD now shows a context-aware hint: an amber "Hold Ctrl + drag to move" label while in-game, a cyan ":: releasing saves position" label while actively dragging, and the standard grey drag hint when Fortnite is not focused. The Dashboard Debug tab now includes a tip card explaining this shortcut under "HUD & Monitor Info".
+- **Feature: In-Game HUD Repositioning (Ctrl + Drag)**. You can now move the decimal angle box while Fortnite is running — no need to alt-tab. Hold `Ctrl` and click-and-drag the HUD overlay to any position on screen. Releasing the mouse automatically saves the new position. The HUD now shows a context-aware hint: an amber "Hold Ctrl + drag to move" label while in-game, a cyan ":: releasing saves position" label while actively dragging, and the standard grey drag hint when Fortnite is not focused. The Dashboard Debug tab now includes a tip card explaining this shortcut under "HUD & Monitor Info".
 
 ### BetterAngle Pro v5.5.283
 - **Feature: Auto-Mantle Diagnostic Toggles**. Added hidden configuration flags (`diagNoRawInput`, `diagNoTopmost`, `diagNoTimer`) to `settings.json`. These toggles allow selectively disabling core OS integrations (raw input sink, topmost overlay, 1ms timer resolution) to isolate the root cause of the Fortnite auto-mantling bug.

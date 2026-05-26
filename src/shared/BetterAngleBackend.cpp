@@ -1105,6 +1105,34 @@ void BetterAngleBackend::setShowDebugOverlay(bool v) {
   }
 }
 
+// ── Auto-Mantle Diagnostic Toggles ──────────────────────────────────────
+bool BetterAngleBackend::diagNoRawInput() const { return g_diagNoRawInput.load(); }
+void BetterAngleBackend::setDiagNoRawInput(bool v) {
+  if (g_diagNoRawInput.load() != v) {
+    g_diagNoRawInput.store(v);
+    SaveSettings();
+    emit debugDataChanged();
+  }
+}
+
+bool BetterAngleBackend::diagNoTopmost() const { return g_diagNoTopmost.load(); }
+void BetterAngleBackend::setDiagNoTopmost(bool v) {
+  if (g_diagNoTopmost.load() != v) {
+    g_diagNoTopmost.store(v);
+    SaveSettings();
+    emit debugDataChanged();
+  }
+}
+
+bool BetterAngleBackend::diagNoTimer() const { return g_diagNoTimer.load(); }
+void BetterAngleBackend::setDiagNoTimer(bool v) {
+  if (g_diagNoTimer.load() != v) {
+    g_diagNoTimer.store(v);
+    SaveSettings();
+    emit debugDataChanged();
+  }
+}
+
 void BetterAngleBackend::refreshDebugData() { emit debugDataChanged(); }
 
 long long BetterAngleBackend::detectionDelayMs() const {

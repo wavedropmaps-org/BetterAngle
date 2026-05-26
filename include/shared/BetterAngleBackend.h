@@ -71,6 +71,11 @@ class BetterAngleBackend : public QObject {
   Q_PROPERTY(QString inputLockStatus READ inputLockStatus NOTIFY debugDataChanged)
   Q_PROPERTY(QString nitroSyncLog READ nitroSyncLog NOTIFY debugDataChanged)
 
+  // Auto-Mantle Diagnostic Toggles (v5.5.285)
+  Q_PROPERTY(bool diagNoRawInput READ diagNoRawInput WRITE setDiagNoRawInput NOTIFY debugDataChanged)
+  Q_PROPERTY(bool diagNoTopmost READ diagNoTopmost WRITE setDiagNoTopmost NOTIFY debugDataChanged)
+  Q_PROPERTY(bool diagNoTimer READ diagNoTimer WRITE setDiagNoTimer NOTIFY debugDataChanged)
+
   // Custom Keybinds
   Q_PROPERTY(
       QString keyToggle READ keyToggle WRITE setKeyToggle NOTIFY hotkeysChanged)
@@ -155,6 +160,14 @@ public:
   QString inputLockStatus() const;
   QString nitroSyncLog() const;
   Q_INVOKABLE void refreshDebugData();
+
+  // Auto-Mantle Diagnostic Toggles
+  bool diagNoRawInput() const;
+  void setDiagNoRawInput(bool v);
+  bool diagNoTopmost() const;
+  void setDiagNoTopmost(bool v);
+  bool diagNoTimer() const;
+  void setDiagNoTimer(bool v);
 
   Q_INVOKABLE void terminateApp();
   Q_INVOKABLE void checkForUpdates();

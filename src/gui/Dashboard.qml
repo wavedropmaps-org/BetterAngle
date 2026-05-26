@@ -1370,6 +1370,116 @@ Item {
                         text: "ROI Cancel: Press ROI key or Esc when in selection stages.\nCustom Keybinds: Works with Mouse1-Mouse5 and keyboard keys.\nEngine Settings: All optimizations (Direct Hardware, Smoothing, Shield) are always ON.\nMove HUD in-game: Hold Ctrl then drag the angle box to reposition it."
                         color: "#aaa"; font.pixelSize: 11; width: parent.width; wrapMode: Text.WordWrap
                     }
+
+                    Item { height: 10 }
+
+                    // ── AUTO-MANTLE DIAGNOSTICS ─────────────────────────
+                    Rectangle {
+                        width: parent.width; height: 1; color: "#ff4444"
+                    }
+                    Text { text: "AUTO-MANTLE DIAGNOSTICS"; color: "#ff6644"; font.pixelSize: 11; font.bold: true }
+                    Text {
+                        text: "Test one at a time. Toggle ON = that feature is DISABLED. If auto-mantling stops, that toggle is the culprit."
+                        color: "#aa6644"; font.pixelSize: 10; width: parent.width; wrapMode: Text.WordWrap
+                    }
+
+                    // Toggle 1: Raw Input
+                    Rectangle {
+                        width: parent.width; height: diagRawCol.implicitHeight + 16; radius: 6
+                        color: backend.diagNoRawInput ? "#2a1010" : "#101a10"
+                        border.color: backend.diagNoRawInput ? "#ff4444" : "#224422"
+                        border.width: 1
+
+                        Column {
+                            id: diagRawCol
+                            anchors { left: parent.left; right: parent.right; top: parent.top; margins: 10 }
+                            spacing: 4
+
+                            RowLayout {
+                                width: parent.width
+                                Switch {
+                                    checked: backend.diagNoRawInput
+                                    onCheckedChanged: backend.diagNoRawInput = checked
+                                }
+                                Text {
+                                    text: backend.diagNoRawInput ? "Raw Input Sink: DISABLED" : "Raw Input Sink: Normal"
+                                    color: backend.diagNoRawInput ? "#ff6644" : "#66ff88"
+                                    font.bold: true; font.pixelSize: 12
+                                }
+                            }
+                            Text {
+                                text: "Disables background mouse listener (RegisterRawInputDevices). Mouse tracking will stop."
+                                color: "#777"; font.pixelSize: 9; width: parent.width; wrapMode: Text.WordWrap
+                            }
+                        }
+                    }
+
+                    // Toggle 2: Topmost
+                    Rectangle {
+                        width: parent.width; height: diagTopCol.implicitHeight + 16; radius: 6
+                        color: backend.diagNoTopmost ? "#2a1010" : "#101a10"
+                        border.color: backend.diagNoTopmost ? "#ff4444" : "#224422"
+                        border.width: 1
+
+                        Column {
+                            id: diagTopCol
+                            anchors { left: parent.left; right: parent.right; top: parent.top; margins: 10 }
+                            spacing: 4
+
+                            RowLayout {
+                                width: parent.width
+                                Switch {
+                                    checked: backend.diagNoTopmost
+                                    onCheckedChanged: backend.diagNoTopmost = checked
+                                }
+                                Text {
+                                    text: backend.diagNoTopmost ? "Topmost Overlay: DISABLED" : "Topmost Overlay: Normal"
+                                    color: backend.diagNoTopmost ? "#ff6644" : "#66ff88"
+                                    font.bold: true; font.pixelSize: 12
+                                }
+                            }
+                            Text {
+                                text: "Removes HWND_TOPMOST from overlay. HUD may go behind Fortnite in fullscreen."
+                                color: "#777"; font.pixelSize: 9; width: parent.width; wrapMode: Text.WordWrap
+                            }
+                        }
+                    }
+
+                    // Toggle 3: Timer
+                    Rectangle {
+                        width: parent.width; height: diagTimerCol.implicitHeight + 16; radius: 6
+                        color: backend.diagNoTimer ? "#2a1010" : "#101a10"
+                        border.color: backend.diagNoTimer ? "#ff4444" : "#224422"
+                        border.width: 1
+
+                        Column {
+                            id: diagTimerCol
+                            anchors { left: parent.left; right: parent.right; top: parent.top; margins: 10 }
+                            spacing: 4
+
+                            RowLayout {
+                                width: parent.width
+                                Switch {
+                                    checked: backend.diagNoTimer
+                                    onCheckedChanged: backend.diagNoTimer = checked
+                                }
+                                Text {
+                                    text: backend.diagNoTimer ? "1ms Timer: DISABLED" : "1ms Timer: Normal"
+                                    color: backend.diagNoTimer ? "#ff6644" : "#66ff88"
+                                    font.bold: true; font.pixelSize: 12
+                                }
+                            }
+                            Text {
+                                text: "Stops forcing 1ms Windows timer resolution (timeBeginPeriod). Polling may become jittery."
+                                color: "#777"; font.pixelSize: 9; width: parent.width; wrapMode: Text.WordWrap
+                            }
+                        }
+                    }
+
+                    Text {
+                        text: "⚠ Restart BetterAngle after toggling for full effect. Test in Fortnite while gliding."
+                        color: "#ff8844"; font.pixelSize: 10; font.bold: true; width: parent.width; wrapMode: Text.WordWrap
+                    }
                 }
             }
         }
