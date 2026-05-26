@@ -46,8 +46,13 @@ extern std::atomic<bool> g_directHardwareModeEnabled;
 extern std::atomic<ULONGLONG> g_lastValidMatchTime;
 extern std::atomic<int> g_lockCount;
 extern std::atomic<bool> g_blockInputActive;
-extern std::mutex g_lockMutex;
 extern std::atomic<ULONGLONG> g_lastLockTime;
+
+// Diagnostics
+extern std::atomic<bool> g_diagNoRawInput;
+extern std::atomic<bool> g_diagNoTopmost;
+extern std::atomic<bool> g_diagNoTimer;
+extern std::mutex g_lockMutex;
 extern std::mutex g_blockInputMutex;
 
 extern std::string g_lastVersionRun;

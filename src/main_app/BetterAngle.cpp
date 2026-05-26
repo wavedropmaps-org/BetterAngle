@@ -1157,16 +1157,28 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
   int screenX = mRect.left;
   int screenY = mRect.top;
 
+  DWORD exStyle = WS_EX_LAYERED | WS_EX_TRANSPARENT;
+  if (!g_diagNoTopmost.load()) {
+    exStyle |= WS_EX_TOPMOST;
+  }
+
   g_hHUD = CreateWindowEx(
-      WS_EX_TOPMOST | WS_EX_LAYERED | WS_EX_TRANSPARENT,
+      exStyle,
       L"BetterAngleHUD", L"BetterAngle HUD", WS_POPUP, screenX, screenY,
       screenW, screenH, NULL, NULL, hInstance, NULL);
 
   LOG_INFO("HUD created: hwnd=0x%p", g_hHUD);
   LogWindowInfo(L"HUD handle", g_hHUD);
   ShowControlPanel(); // Force Dashboard to show on startup
-  SetWindowPos(g_hHUD, HWND_TOPMOST, 0, 0, 0, 0,
-               SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+  
+  if (!g_diagNoTopmost.load()) {
+    SetWindowPos(g_hHUD, HWND_TOPMOST, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+  } else {
+    SetWindowPos(g_hHUD, HWND_NOTOPMOST, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+  }
+  
   UpdateWindow(g_hHUD);
   SetTimer(g_hHUD, 1, 10, NULL);    // 100fps (~10ms) Repaint Timer
   SetTimer(g_hHUD, 2, 30000, NULL); // 30s Auto-Save Timer

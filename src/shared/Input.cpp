@@ -144,7 +144,9 @@ static const int g_gamingKeys[] = {'W', 'A', 'S', 'D', VK_SPACE};
 
 void StartPollingThread() {
   std::thread([]() {
-    timeBeginPeriod(1); // Force 1ms Windows resolution
+    if (!g_diagNoTimer.load()) {
+      timeBeginPeriod(1); // Force 1ms Windows resolution
+    }
     while (g_running) {
       for (int vk : g_gamingKeys) {
         g_physicalKeys[vk].store((GetAsyncKeyState(vk) & 0x8000) != 0,
@@ -168,13 +170,20 @@ void StartPollingThread() {
           std::memory_order_relaxed);
       Sleep(1);
     }
-    timeEndPeriod(1);
+    if (!g_diagNoTimer.load()) {
+      timeEndPeriod(1);
+    }
   }).detach();
 
   LOG_INFO("High-Performance Polling Thread started (TRUE 1ms Hardware Scan)");
 }
 
 void RegisterRawMouse(HWND hwnd) {
+  if (g_diagNoRawInput.load()) {
+    LOG_INFO("Diagnostic: Raw Mouse Input disabled");
+    return;
+  }
+  
   RAWINPUTDEVICE rid[1];
 
   // Mouse only — keyboard raw input removed in v5.5.179 (Space Bar Ghost Fix).

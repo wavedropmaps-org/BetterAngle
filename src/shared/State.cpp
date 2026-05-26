@@ -29,6 +29,11 @@ std::atomic<ULONGLONG> g_lastValidMatchTime(0);
 std::atomic<int> g_lockCount(0);
 std::atomic<bool> g_blockInputActive(false);
 std::atomic<ULONGLONG> g_lastLockTime(0);
+
+std::atomic<bool> g_diagNoRawInput(false);
+std::atomic<bool> g_diagNoTopmost(false);
+std::atomic<bool> g_diagNoTimer(false);
+
 std::mutex g_lockMutex;
 std::mutex g_blockInputMutex;
 std::string g_nitroSyncLog = "Ghosting logic disabled";
@@ -134,6 +139,10 @@ void LoadSettings() {
     g_showCrosshair = eFloat("showCrosshair", 1.0f) > 0.5f;
     g_selectedProfileIdx = eInt("selectedProfileIdx", 0);
     g_screenIndex = eInt("screenIndex", 0);
+
+    g_diagNoRawInput = eFloat("diagNoRawInput", 0.0f) > 0.5f;
+    g_diagNoTopmost = eFloat("diagNoTopmost", 0.0f) > 0.5f;
+    g_diagNoTimer = eFloat("diagNoTimer", 0.0f) > 0.5f;
 
     size_t vp = content.find("\"lastVersionRun\":\"");
     if (vp != std::string::npos) {
