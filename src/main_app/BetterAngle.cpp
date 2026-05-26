@@ -373,8 +373,8 @@ bool RefreshHotkeys(HWND hWnd, bool force) {
       return true;
     }
 
-    // Apply MOD_NOREPEAT flag
-    UINT flags = mod; // Removed MOD_NOREPEAT for compat
+    // Apply MOD_NOREPEAT flag (0x4000) to prevent strobing when held
+    UINT flags = mod | 0x4000;
 
     if (!RegisterHotKey(hWnd, id, flags, vk)) {
       DWORD err = GetLastError();
@@ -473,9 +473,15 @@ static void CheckMouseButtonHotkeys(HWND hWnd) {
   // Allow mouse button hotkeys during selection overlay (they may trigger selection actions)
   // This ensures custom keybinds work during ROI/color selection
 
+  // State tracker to prevent strobing (only fire on key press edge)
+  static bool wasPressed[6] = {false, false, false, false, false, false}; // For ids 1 to 4 (using 6 for safety)
+
   for (int id = 1; id <= 4; id++) {
     UINT mouseBtn = g_mouseButtonKeybinds[id].load(std::memory_order_acquire);
-    if (mouseBtn == 0) continue; // Not a mouse button hotkey
+    if (mouseBtn == 0) {
+      wasPressed[id] = false;
+      continue; // Not a mouse button hotkey
+    }
 
     UINT mod = g_mouseButtonModifiers[id].load(std::memory_order_acquire);
 
@@ -491,7 +497,7 @@ static void CheckMouseButtonHotkeys(HWND hWnd) {
     }
 
     // Check if mouse button is pressed
-    if ((GetAsyncKeyState(vk) & 0x8000) == 0) continue; // Button not pressed
+    bool isBtnPressed = (GetAsyncKeyState(vk) & 0x8000) != 0;
 
     // Check modifiers
     bool ctrlPressed = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
@@ -502,12 +508,21 @@ static void CheckMouseButtonHotkeys(HWND hWnd) {
     bool shiftRequired = (mod & MOD_SHIFT) != 0;
     bool altRequired = (mod & MOD_ALT) != 0;
 
-    if (ctrlRequired != ctrlPressed || shiftRequired != shiftPressed || altRequired != altPressed) {
-      continue; // Modifiers don't match
-    }
+    bool modsMatch = (ctrlRequired == ctrlPressed && shiftRequired == shiftPressed && altRequired == altPressed);
 
-    // Modifiers match and button is pressed - trigger the action
-    PostMessage(hWnd, WM_HOTKEY, id, 0);
+    if (isBtnPressed && modsMatch) {
+      // Button and modifiers match - trigger only if not already pressed
+      if (!wasPressed[id]) {
+        wasPressed[id] = true;
+        PostMessage(hWnd, WM_HOTKEY, id, 0);
+      }
+    } else {
+      // If either button is released OR modifiers don't match, reset state
+      // (Wait until all required keys are fully released/mismatched to allow re-trigger, or just button release)
+      if (!isBtnPressed || !modsMatch) {
+        wasPressed[id] = false;
+      }
+    }
   }
 }
 

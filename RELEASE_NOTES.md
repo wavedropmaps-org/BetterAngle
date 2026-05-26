@@ -1,3 +1,6 @@
+### BetterAngle Pro v5.5.281
+- **Fix: Hotkey Strobing and Mouse Button Debouncing**. Re-enabled the `MOD_NOREPEAT` flag for keyboard hotkeys and implemented an edge-detection state tracker for custom mouse button hotkeys. This stops the toggles (like the crosshair) from rapidly flickering on and off when you hold the key down or click normally.
+
 ### BetterAngle Pro v5.5.280
 - **Fix: Crosshair / HUD now hides on Alt-Tab**. When Fortnite loses focus the overlay paints fully transparent (HUD + crosshair both invisible). When Fortnite regains focus the overlay restores to the user's last toggle state - acts as a clean suspend.
 - **Fix: Keybind capture in dashboard**. `startKeybindAssignment` now unregisters all OS hotkeys so keypresses (e.g. F10) reach Qt's keyboard pipeline. `endKeybindAssignment` force-refreshes the registration. Previously the registered hotkey ate the keypress before Qt could see it, so the TextField sat empty.
