@@ -1302,6 +1302,57 @@ Item {
                         Text { text: backend.screenIndex; color: "#88ccff"; font.bold: true; font.pixelSize: 11 }
                     }
 
+                    // Ctrl+drag tip card
+                    Rectangle {
+                        width: parent.width
+                        height: ctrlDragCol.implicitHeight + 16
+                        radius: 6
+                        color: "#0e1a2e"
+                        border.color: "#1a4a88"
+                        border.width: 1
+
+                        Column {
+                            id: ctrlDragCol
+                            anchors { left: parent.left; right: parent.right; top: parent.top; margins: 10 }
+                            spacing: 4
+
+                            Row {
+                                spacing: 6
+                                Text { text: "💡"; font.pixelSize: 12; verticalAlignment: Text.AlignVCenter }
+                                Text {
+                                    text: "Move the angle box while in-game"
+                                    color: "#88ccff"
+                                    font.pixelSize: 11
+                                    font.bold: true
+                                    verticalAlignment: Text.AlignVCenter
+                                }
+                            }
+
+                            Text {
+                                width: parent.width
+                                text: "Hold  Ctrl  then click-and-drag the HUD box directly inside Fortnite to reposition it. Release to save."
+                                color: "#8899bb"
+                                font.pixelSize: 10
+                                wrapMode: Text.WordWrap
+                            }
+
+                            Rectangle {
+                                width: parent.width; height: 26; radius: 4
+                                color: "#12213a"
+                                border.color: "#2255aa"; border.width: 1
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "Ctrl  +  Click & Drag  →  move angle box"
+                                    color: "#aaccff"
+                                    font.pixelSize: 11
+                                    font.bold: true
+                                    font.family: "Consolas"
+                                }
+                            }
+                        }
+                    }
+
                     Item { height: 5 }
 
                     // SELECTION STATE
@@ -1316,7 +1367,7 @@ Item {
                     Text { text: "PRO TIPS & SHORTCUTS"; color: "#666"; font.pixelSize: 11; font.bold: true }
 
                     Text {
-                        text: "ROI Cancel: Press ROI key or Esc when in selection stages.\nCustom Keybinds: Works with Mouse1-Mouse5 and keyboard keys.\nEngine Settings: All optimizations (Direct Hardware, Smoothing, Shield) are always ON."
+                        text: "ROI Cancel: Press ROI key or Esc when in selection stages.\nCustom Keybinds: Works with Mouse1-Mouse5 and keyboard keys.\nEngine Settings: All optimizations (Direct Hardware, Smoothing, Shield) are always ON.\nMove HUD in-game: Hold Ctrl then drag the angle box to reposition it."
                         color: "#aaa"; font.pixelSize: 11; width: parent.width; wrapMode: Text.WordWrap
                     }
                 }

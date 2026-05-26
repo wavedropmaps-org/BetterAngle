@@ -536,14 +536,32 @@ void DrawOverlay(HWND hwnd, double angle, bool showCrosshair, bool overlayVisibl
     Pen swatchP(Color(100, 220, 220, 220), 1.0f);
     graphics.DrawEllipse(&swatchP, swatchX, swatchY, 16, 16);
 
-    // Drag hint
-    Font tinyFont(&ff, 9, FontStyleRegular, UnitPixel);
-    SolidBrush tinyBrush(Color(g_isDraggingHUD ? 130 : 50, 200, 210, 220));
-    StringFormat sfCenter;
-    sfCenter.SetAlignment(StringAlignmentCenter);
-    graphics.DrawString(L":: drag", -1, &tinyFont,
-                        RectF(float(rx), float(ry + rh - 14), float(rw), 12.0f),
-                        &sfCenter, &tinyBrush);
+    // Drag hint — context-aware:
+    //   In-game (Fortnite focused): remind user to hold Ctrl to unlock drag.
+    //   Out-of-game / actively dragging: show standard cue.
+    {
+      bool inGame = IsFortniteForeground();
+      bool dragging = g_isDraggingHUD;
+
+      // Pulsing alpha so the hint is visible but not distracting
+      BYTE hintAlpha = dragging ? 200 : (inGame ? 90 : 55);
+      Color hintCol = dragging
+                        ? Color(hintAlpha, 100, 230, 255)   // cyan when dragging
+                        : (inGame ? Color(hintAlpha, 255, 200, 80)  // amber in-game
+                                  : Color(hintAlpha, 200, 210, 220)); // grey out-of-game
+
+      Font tinyFont(&ff, 9, FontStyleRegular, UnitPixel);
+      SolidBrush tinyBrush(hintCol);
+      StringFormat sfCenter;
+      sfCenter.SetAlignment(StringAlignmentCenter);
+
+      const wchar_t *hintText = dragging      ? L":: releasing saves position"
+                                : inGame      ? L"Hold Ctrl + drag to move"
+                                              : L":: drag to move";
+      graphics.DrawString(hintText, -1, &tinyFont,
+                          RectF(float(rx), float(ry + rh - 14), float(rw), 12.0f),
+                          &sfCenter, &tinyBrush);
+    }
 
     // DEBUG Overlay Box
     if (g_showDebugOverlay && !g_allProfiles.empty()) {

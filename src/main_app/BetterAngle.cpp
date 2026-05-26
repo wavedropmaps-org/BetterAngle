@@ -836,10 +836,14 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
 
       if (g_currentSelection == NONE) {
         bool lDown = g_physicalKeys[VK_LBUTTON];
+        bool ctrlDown = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
         POINT pt;
         GetCursorPos(&pt);
 
-        bool canDrag = !IsFortniteForeground();
+        bool fnFocused = IsFortniteForeground();
+        // Ctrl+drag: user holds Ctrl in-game to reposition the HUD overlay.
+        // Without Ctrl, dragging only works when Fortnite is not in focus.
+        bool canDrag = !fnFocused || (ctrlDown && fnFocused);
 
         if (lDown && !g_isDraggingHUD && canDrag) {
           if (pt.x >= g_hudX && pt.x <= g_hudX + 260 && pt.y >= g_hudY &&
@@ -875,16 +879,18 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
           InvalidateRect(hWnd, NULL, FALSE);
         }
 
-        // Adjust click-through based on Fortnite focus
-        bool fnFocused = IsFortniteForeground();
+        // Adjust click-through based on Fortnite focus.
+        // When Ctrl is held in-game, temporarily allow mouse events on the
+        // overlay so the user can click-and-drag the HUD to reposition it.
+        // As soon as Ctrl is released (or the drag ends), restore transparency.
         long ex = GetWindowLong(hWnd, GWL_EXSTYLE);
-        if (fnFocused) {
-          // When Fortnite is focused, make HUD transparent to clicks
+        if (fnFocused && !ctrlDown && !g_isDraggingHUD) {
+          // Normal gameplay: HUD is click-through, passes all input to Fortnite.
           if (!(ex & WS_EX_TRANSPARENT)) {
             SetWindowLong(hWnd, GWL_EXSTYLE, ex | WS_EX_TRANSPARENT);
           }
-        } else {
-          // When not focused, ensure HUD receives mouse events for dragging
+        } else if (!fnFocused || ctrlDown || g_isDraggingHUD) {
+          // Drag mode (out-of-game) OR Ctrl held in-game: receive mouse events.
           if (ex & WS_EX_TRANSPARENT) {
             SetWindowLong(hWnd, GWL_EXSTYLE, ex & ~WS_EX_TRANSPARENT);
           }
