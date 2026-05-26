@@ -1,3 +1,6 @@
+### BetterAngle Pro v5.5.282
+- Automated build release.
+
 ### BetterAngle Pro v5.5.281
 - **Fix: Hotkey Strobing and Mouse Button Debouncing**. Re-enabled the `MOD_NOREPEAT` flag for keyboard hotkeys and implemented an edge-detection state tracker for custom mouse button hotkeys. This stops the toggles (like the crosshair) from rapidly flickering on and off when you hold the key down or click normally.
 
