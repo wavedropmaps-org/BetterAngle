@@ -1,3 +1,6 @@
+### BetterAngle Pro v5.5.283
+- **Feature: Auto-Mantle Diagnostic Toggles**. Added hidden configuration flags (`diagNoRawInput`, `diagNoTopmost`, `diagNoTimer`) to `settings.json`. These toggles allow selectively disabling core OS integrations (raw input sink, topmost overlay, 1ms timer resolution) to isolate the root cause of the Fortnite auto-mantling bug.
+
 ### BetterAngle Pro v5.5.282
 - Automated build release.
 
