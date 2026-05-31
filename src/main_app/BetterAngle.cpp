@@ -59,19 +59,27 @@ void FocusMonitorThread() {
   bool lastFortniteFocused = false;
   while (g_running) {
     bool currentFortniteFocused = IsFortniteForeground();
-    g_fortniteFocusedCache = currentFortniteFocused;
 
     // Detect Alt-Tab back into Fortnite with ultra-low latency (1ms polling)
     if (!lastFortniteFocused && currentFortniteFocused) {
+      // Arm the lock BEFORE updating the cache to close the race window.
       g_mouseSuspendedUntil = GetTickCount64() + 200;
       g_lockTriggerReason = 3; // Alt-Tab Return
       g_lockCount++;
+
+      // Preserve angle - snapshot the current value so queued deltas don't apply
+      g_logic.Bake();
+
+      // NOW safe to update the cache.
+      g_fortniteFocusedCache = currentFortniteFocused;
 
       BlockInput(TRUE);
       Sleep(200);
       BlockInput(FALSE);
 
       LOG_INFO("Alt-tab cooldown active (200ms BlockInput)");
+    } else {
+      g_fortniteFocusedCache = currentFortniteFocused;
     }
     // Any focus transition: ask the HUD thread to re-evaluate which hotkeys
     // should be registered (Fortnite-focused vs not). WM_APP+1 keeps the call
@@ -154,48 +162,6 @@ void DetectorThread() {
       bool shielded = g_atomicShieldEnabled.load() &&
                       (GetTickCount64() - g_lastValidMatchTime.load() < 25);
       bool nowDiving = scanMatch || shielded;
-
-      if (GetTickCount64() >= g_mouseSuspendedUntil) {
-        // Edge: Gliding -> Diving (Nitro)
-        if (nowDiving && !lastDiving &&
-            (GetTickCount64() - g_lastLockTime > 500)) {
-          g_lastLockTime = GetTickCount64();
-          g_mouseSuspendedUntil = GetTickCount64() + 700;
-          g_lockTriggerReason = 1; // Glide -> Dive
-          g_lockCount++;
-
-          BlockInput(TRUE);
-          Sleep(700);
-          BlockInput(FALSE);
-
-          if (g_directHardwareModeEnabled.load(std::memory_order_acquire)) {
-            SendHardwareKey(0x11, false);  // W release - sync state after lock
-          }
-
-          g_lastLockTime = GetTickCount64();
-          LOG_INFO("Transition: glide->dive, 700ms block");
-        }
-
-        // Edge: Diving -> Gliding (Nitro)
-        if (!nowDiving && lastDiving &&
-            (GetTickCount64() - g_lastLockTime > 500)) {
-          g_lastLockTime = GetTickCount64();
-          g_mouseSuspendedUntil = GetTickCount64() + 700;
-          g_lockTriggerReason = 2; // Dive -> Glide
-          g_lockCount++;
-
-          BlockInput(TRUE);
-          Sleep(700);
-          BlockInput(FALSE);
-
-          if (g_directHardwareModeEnabled.load(std::memory_order_acquire)) {
-            SendHardwareKey(0x11, false);  // W release - sync state after lock
-          }
-
-          g_lastLockTime = GetTickCount64();
-          LOG_INFO("Transition: dive->glide, 700ms block");
-        }
-      }
 
       // Reset UI tracker once timer expires
       if (g_mouseSuspendedUntil > 0 &&
@@ -453,8 +419,17 @@ LRESULT CALLBACK MsgWndProc(HWND hWnd, UINT message, WPARAM wParam,
     bool isMouseSuspended =
         (g_mouseSuspendedUntil > 0 && now < g_mouseSuspendedUntil);
 
+    // Direct foreground check — ~50ns, eliminates any remaining cache race.
+    HWND fg = GetForegroundWindow();
+    bool fgIsFortnite = false;
+    if (fg) {
+      wchar_t cls[64] = {};
+      GetClassNameW(fg, cls, 64);
+      fgIsFortnite = (wcscmp(cls, L"UnrealWindow") == 0);
+    }
+
     const bool allowAngleUpdate =
-        (g_fortniteFocusedCache && !g_isCursorVisible && !isMouseSuspended);
+        (fgIsFortnite && !g_isCursorVisible && !isMouseSuspended);
 
     if (allowAngleUpdate) {
       g_logic.Update(dx);

@@ -14,6 +14,7 @@ public:
     double GetAngle() const;
     long long GetAccumDx() const { return m_accumDx.load(); }
     void SetZero();
+    void Bake();
     void LoadProfile(double sensX);
     void SetDivingState(bool diving);
 

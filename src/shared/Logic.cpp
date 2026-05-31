@@ -23,6 +23,11 @@ void AngleLogic::SetZero() {
   m_baseAngle = 0.0;
 }
 
+void AngleLogic::Bake() {
+  m_baseAngle = GetAngle();
+  m_baseDx = m_accumDx.load();
+}
+
 void AngleLogic::LoadProfile(double sensX) {
   // Before updating sensitivity, bake in the current angle to prevent jumping
   m_baseAngle = GetAngle();
