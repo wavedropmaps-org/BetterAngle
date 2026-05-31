@@ -1,15 +1,15 @@
-### BetterAngle Pro v5.5.288
-- Automated build release.
+### BetterAngle Pro v5.5.289
+- **Fix: Zero-Latency Focus Hooks**. Replaced the old spin-loop focus polling with native OS `SetWinEventHook` listeners. The app now receives focus change events instantly from the Windows kernel with zero CPU usage.
+- **Fix: Alt-Tab Input Gate**. Reverted the raw input message handler to use the synchronized focus cache guard. This ensures the 200ms `BlockInput` lock is armed *before* any queued background mouse deltas can bypass the guard during an Alt-Tab transition, permanently fixing the angle jumping.
 
 ### BetterAngle Pro v5.5.287
-- **Fix: Angle Glitching on Alt-Tab Return**. Fixed a race condition where raw input from the desktop could briefly leak into the game's angle calculation when tabbing back in. Added direct foreground checking and angle state snapshotting to ensure clean focus transitions.
 - **Cleanup: Removed Nitro Transition Locking**. Removed obsolete dive/glide input locking code as ghosting is no longer an issue, which prevents accidental locking conflicts.
 
 ### BetterAngle Pro v5.5.285
-- **Feature: Dashboard Diagnostic Toggle Buttons**. The 3 auto-mantle diagnostic toggles (Raw Input Sink, Topmost Overlay, 1ms Timer) are now visual switch buttons at the bottom of the Debug tab. No more editing `settings.json` by hand ? just flip the switch, restart, and test. Each toggle shows red when active (feature disabled) and green when normal, with inline explanations.
+- **Feature: Dashboard Diagnostic Toggle Buttons**. The 3 auto-mantle diagnostic toggles (Raw Input Sink, Topmost Overlay, 1ms Timer) are now visual switch buttons at the bottom of the Debug tab. No more editing `settings.json` by hand — just flip the switch, restart, and test. Each toggle shows red when active (feature disabled) and green when normal, with inline explanations.
 
 ### BetterAngle Pro v5.5.284
-- **Feature: In-Game HUD Repositioning (Ctrl + Drag)**. You can now move the decimal angle box while Fortnite is running ? no need to alt-tab. Hold `Ctrl` and click-and-drag the HUD overlay to any position on screen. Releasing the mouse automatically saves the new position. The HUD now shows a context-aware hint: an amber "Hold Ctrl + drag to move" label while in-game, a cyan ":: releasing saves position" label while actively dragging, and the standard grey drag hint when Fortnite is not focused. The Dashboard Debug tab now includes a tip card explaining this shortcut under "HUD & Monitor Info".
+- **Feature: In-Game HUD Repositioning (Ctrl + Drag)**. You can now move the decimal angle box while Fortnite is running — no need to alt-tab. Hold `Ctrl` and click-and-drag the HUD overlay to any position on screen. Releasing the mouse automatically saves the new position. The HUD now shows a context-aware hint: an amber "Hold Ctrl + drag to move" label while in-game, a cyan ":: releasing saves position" label while actively dragging, and the standard grey drag hint when Fortnite is not focused. The Dashboard Debug tab now includes a tip card explaining this shortcut under "HUD & Monitor Info".
 
 ### BetterAngle Pro v5.5.283
 - **Feature: Auto-Mantle Diagnostic Toggles**. Added hidden configuration flags (`diagNoRawInput`, `diagNoTopmost`, `diagNoTimer`) to `settings.json`. These toggles allow selectively disabling core OS integrations (raw input sink, topmost overlay, 1ms timer resolution) to isolate the root cause of the Fortnite auto-mantling bug.

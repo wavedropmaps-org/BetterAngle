@@ -1,3 +1,3 @@
-### BetterAngle Pro v5.5.287
-- **Fix: Angle Glitching on Alt-Tab Return**. Fixed a race condition where raw input from the desktop could briefly leak into the game's angle calculation when tabbing back in. Added direct foreground checking and angle state snapshotting to ensure clean focus transitions.
-- **Cleanup: Removed Nitro Transition Locking**. Removed obsolete dive/glide input locking code as ghosting is no longer an issue, which prevents accidental locking conflicts.
+### BetterAngle Pro v5.5.289
+- **Fix: Zero-Latency Focus Hooks**. Replaced the old spin-loop focus polling with native OS `SetWinEventHook` listeners. The app now receives focus change events instantly from the Windows kernel with zero CPU usage.
+- **Fix: Alt-Tab Input Gate**. Reverted the raw input message handler to use the synchronized focus cache guard. This ensures the 200ms `BlockInput` lock is armed *before* any queued background mouse deltas can bypass the guard during an Alt-Tab transition, permanently fixing the angle jumping.

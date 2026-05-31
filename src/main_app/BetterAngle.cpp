@@ -53,14 +53,23 @@ static void FlushPendingInputMessages() {
   }
 }
 
-// High-frequency thread to detect Fortnite focus changes instantly (Alt-Tab
-// detection)
-void FocusMonitorThread() {
-  bool lastFortniteFocused = false;
-  while (g_running) {
-    bool currentFortniteFocused = IsFortniteForeground();
+HWINEVENTHOOK g_hWinEventHook = NULL;
 
-    // Detect Alt-Tab back into Fortnite with ultra-low latency (1ms polling)
+void CALLBACK WinEventProc(HWINEVENTHOOK hWinEventHook, DWORD event, HWND hwnd,
+                           LONG idObject, LONG idChild, DWORD dwEventThread,
+                           DWORD dwmsEventTime) {
+  if (event == EVENT_SYSTEM_FOREGROUND) {
+    bool isFortnite = false;
+    if (hwnd) {
+      wchar_t cls[64] = {};
+      if (GetClassNameW(hwnd, cls, 64) && wcscmp(cls, L"UnrealWindow") == 0) {
+        isFortnite = true;
+      }
+    }
+
+    static bool lastFortniteFocused = false;
+    bool currentFortniteFocused = isFortnite;
+
     if (!lastFortniteFocused && currentFortniteFocused) {
       // Arm the lock BEFORE updating the cache to close the race window.
       g_mouseSuspendedUntil = GetTickCount64() + 200;
@@ -73,24 +82,25 @@ void FocusMonitorThread() {
       // NOW safe to update the cache.
       g_fortniteFocusedCache = currentFortniteFocused;
 
-      BlockInput(TRUE);
-      Sleep(200);
-      BlockInput(FALSE);
-
-      LOG_INFO("Alt-tab cooldown active (200ms BlockInput)");
+      // Run BlockInput on a detached thread so it doesn't freeze the Qt UI pump
+      std::thread([]() {
+        BlockInput(TRUE);
+        Sleep(200);
+        BlockInput(FALSE);
+        LOG_INFO("Alt-tab cooldown active (200ms BlockInput)");
+      }).detach();
     } else {
       g_fortniteFocusedCache = currentFortniteFocused;
     }
+
     // Any focus transition: ask the HUD thread to re-evaluate which hotkeys
-    // should be registered (Fortnite-focused vs not). WM_APP+1 keeps the call
-    // on the HUD's owning thread, which is required for RegisterHotKey.
+    // should be registered (Fortnite-focused vs not).
     if (lastFortniteFocused != currentFortniteFocused) {
       if (g_hHUD) {
         PostMessage(g_hHUD, WM_APP + 1, currentFortniteFocused ? 1 : 0, 0);
       }
     }
     lastFortniteFocused = currentFortniteFocused;
-    _mm_pause(); // Zero-latency spin-wait (nanosecond response)
   }
 }
 
@@ -419,17 +429,8 @@ LRESULT CALLBACK MsgWndProc(HWND hWnd, UINT message, WPARAM wParam,
     bool isMouseSuspended =
         (g_mouseSuspendedUntil > 0 && now < g_mouseSuspendedUntil);
 
-    // Direct foreground check — ~50ns, eliminates any remaining cache race.
-    HWND fg = GetForegroundWindow();
-    bool fgIsFortnite = false;
-    if (fg) {
-      wchar_t cls[64] = {};
-      GetClassNameW(fg, cls, 64);
-      fgIsFortnite = (wcscmp(cls, L"UnrealWindow") == 0);
-    }
-
     const bool allowAngleUpdate =
-        (fgIsFortnite && !g_isCursorVisible && !isMouseSuspended);
+        (g_fortniteFocusedCache && !g_isCursorVisible && !isMouseSuspended);
 
     if (allowAngleUpdate) {
       g_logic.Update(dx);
@@ -1165,18 +1166,22 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
   SetTimer(g_hHUD, 2, 30000, NULL); // 30s Auto-Save Timer
 
   std::thread detThread(DetectorThread);
-  std::thread focusThread(FocusMonitorThread);
   std::thread perfThread(PerformanceMonitorThread);
+
+  g_hWinEventHook = SetWinEventHook(EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND,
+                                    NULL, WinEventProc, 0, 0,
+                                    WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
 
   // Run Qt Event Loop
   int exitCode = app.exec();
   LOG_INFO("Qt event loop exited with code=%d", exitCode);
 
   g_running = false;
+  if (g_hWinEventHook) {
+    UnhookWinEvent(g_hWinEventHook);
+  }
   if (detThread.joinable())
     detThread.join();
-  if (focusThread.joinable())
-    focusThread.join();
   if (perfThread.joinable())
     perfThread.join();
 
