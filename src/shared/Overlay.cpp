@@ -297,8 +297,7 @@ void DrawOverlay(HWND hwnd, double angle, bool showCrosshair, bool overlayVisibl
       if (p.roi_w > 0 && p.roi_h > 0) {
         // Purple during focus-steal suspend, red when diving, green when
         // gliding
-        bool suspended = (g_mouseSuspendedUntil > 0 &&
-                          GetTickCount64() < g_mouseSuspendedUntil);
+        bool suspended = g_blockInputActive.load();
         Color roiCol = suspended    ? Color(200, 180, 60, 220) // purple
                        : g_isDiving ? Color(200, 255, 60, 60)  // red
                                     : Color(200, 60, 220, 80); // green
@@ -566,8 +565,7 @@ void DrawOverlay(HWND hwnd, double angle, bool showCrosshair, bool overlayVisibl
     // DEBUG Overlay Box
     if (g_showDebugOverlay && !g_allProfiles.empty()) {
       auto &dbgP = g_allProfiles[g_selectedProfileIdx];
-      bool suspended = (g_mouseSuspendedUntil > 0 &&
-                        GetTickCount64() < g_mouseSuspendedUntil);
+      bool suspended = g_blockInputActive.load();
       int dx = rx;
       int dy = ry + rh + 8;
       int dw = rw * 2; // Double width for columns (v5.5.17)
@@ -602,12 +600,7 @@ void DrawOverlay(HWND hwnd, double angle, bool showCrosshair, bool overlayVisibl
       bool fnFoc = g_fortniteFocusedCache.load();
       bool msHdd = !g_isCursorVisible.load();
 
-      std::wstring suspStr = L"NO";
-      if (suspended) {
-        long long rem =
-            (long long)g_mouseSuspendedUntil - (long long)GetTickCount64();
-        suspStr = std::to_wstring(rem) + L" ms";
-      }
+      std::wstring suspStr = suspended ? L"ACTIVE" : L"NO";
 
       int matchCount = g_matchCount.load();
       int area = (g_allProfiles.empty()) ? 10000 : (dbgP.roi_w * dbgP.roi_h);

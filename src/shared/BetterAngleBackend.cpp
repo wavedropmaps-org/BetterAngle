@@ -1146,7 +1146,7 @@ int BetterAngleBackend::detectionRatioPct() const {
   return (int)((g_matchCount.load() * 100) / area);
 }
 bool BetterAngleBackend::inputLocked() const {
-  return g_mouseSuspendedUntil > 0 && GetTickCount64() < g_mouseSuspendedUntil;
+  return g_blockInputActive.load();
 }
 bool BetterAngleBackend::isDiving() const { return g_isDiving; }
 
@@ -1217,12 +1217,12 @@ QString BetterAngleBackend::rawWState() const {
 }
 
 QString BetterAngleBackend::inputLockStatus() const {
-    bool isLocked = (GetTickCount64() < g_mouseSuspendedUntil.load());
+    bool isLocked = g_blockInputActive.load();
     return isLocked ? "ACTIVE" : "IDLE";
 }
 
 QString BetterAngleBackend::nitroSyncLog() const {
-  return QString::fromStdString(g_nitroSyncLog);
+  return "Ghosting logic disabled";
 }
 
 void BetterAngleBackend::finishBooting() {

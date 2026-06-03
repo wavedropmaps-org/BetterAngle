@@ -9,7 +9,6 @@
 #include <vector>
 #include <windows.h>
 
-extern std::string g_nitroSyncLog;
 
 namespace {
 bool IsFortniteProcessName(const wchar_t *processName) {

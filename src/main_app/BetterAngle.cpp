@@ -40,18 +40,7 @@ void PerformanceMonitorThread();
 ULONG_PTR g_gdiplusToken;
 FovDetector g_detector;
 
-// Helper function to flush pending input messages before blocking
-static void FlushPendingInputMessages() {
-  MSG msg;
-  // Remove all pending keyboard and mouse messages from the queue
-  while (PeekMessageW(&msg, NULL, WM_KEYFIRST, WM_KEYLAST, PM_REMOVE)) {
-  }
-  while (PeekMessageW(&msg, NULL, WM_MOUSEFIRST, WM_MOUSELAST, PM_REMOVE)) {
-  }
-  // Also flush any other input messages
-  while (PeekMessageW(&msg, NULL, 0, 0, PM_REMOVE)) {
-  }
-}
+
 
 HWINEVENTHOOK g_hWinEventHook = NULL;
 
@@ -71,8 +60,6 @@ void CALLBACK WinEventProc(HWINEVENTHOOK hWinEventHook, DWORD event, HWND hwnd,
     bool currentFortniteFocused = isFortnite;
 
     if (!lastFortniteFocused && currentFortniteFocused) {
-      // Arm the lock BEFORE updating the cache to close the race window.
-      g_mouseSuspendedUntil = GetTickCount64() + 200;
       g_lockTriggerReason = 3; // Alt-Tab Return
       g_lockCount++;
 
@@ -82,12 +69,20 @@ void CALLBACK WinEventProc(HWINEVENTHOOK hWinEventHook, DWORD event, HWND hwnd,
       // NOW safe to update the cache.
       g_fortniteFocusedCache = currentFortniteFocused;
 
+      // Re-assert TOPMOST so the overlay doesn't stay hidden behind Fortnite
+      if (g_hHUD && !g_diagNoTopmost.load()) {
+        SetWindowPos(g_hHUD, HWND_TOPMOST, 0, 0, 0, 0,
+                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+      }
+
       // Run BlockInput on a detached thread so it doesn't freeze the Qt UI pump
       std::thread([]() {
+        g_blockInputActive = true;
         BlockInput(TRUE);
-        Sleep(200);
+        Sleep(300);
         BlockInput(FALSE);
-        LOG_INFO("Alt-tab cooldown active (200ms BlockInput)");
+        g_blockInputActive = false;
+        LOG_INFO("Alt-tab cooldown active (300ms BlockInput)");
       }).detach();
     } else {
       g_fortniteFocusedCache = currentFortniteFocused;
@@ -173,10 +168,47 @@ void DetectorThread() {
                       (GetTickCount64() - g_lastValidMatchTime.load() < 25);
       bool nowDiving = scanMatch || shielded;
 
-      // Reset UI tracker once timer expires
-      if (g_mouseSuspendedUntil > 0 &&
-          GetTickCount64() >= g_mouseSuspendedUntil) {
-        g_mouseSuspendedUntil = 0;
+      // FOV Transition Locking: BlockInput during glide<->dive changes
+      // to prevent mouse movement from corrupting the angle during the
+      // sensitivity scale switch.
+      if (!g_blockInputActive.load()) {
+        // Edge: Gliding -> Diving
+        if (nowDiving && !lastDiving &&
+            (GetTickCount64() - g_lastLockTime > 500)) {
+          g_lastLockTime = GetTickCount64();
+          g_lockTriggerReason = 1; // Glide -> Dive
+          g_lockCount++;
+          g_logic.Bake();
+
+          std::thread([]() {
+            g_blockInputActive = true;
+            BlockInput(TRUE);
+            Sleep(700);
+            BlockInput(FALSE);
+            g_blockInputActive = false;
+            g_lastLockTime = GetTickCount64();
+            LOG_INFO("Transition: glide->dive, 700ms BlockInput");
+          }).detach();
+        }
+
+        // Edge: Diving -> Gliding
+        if (!nowDiving && lastDiving &&
+            (GetTickCount64() - g_lastLockTime > 500)) {
+          g_lastLockTime = GetTickCount64();
+          g_lockTriggerReason = 2; // Dive -> Glide
+          g_lockCount++;
+          g_logic.Bake();
+
+          std::thread([]() {
+            g_blockInputActive = true;
+            BlockInput(TRUE);
+            Sleep(700);
+            BlockInput(FALSE);
+            g_blockInputActive = false;
+            g_lastLockTime = GetTickCount64();
+            LOG_INFO("Transition: dive->glide, 700ms BlockInput");
+          }).detach();
+        }
       }
 
       lastDiving = nowDiving;
@@ -425,12 +457,8 @@ LRESULT CALLBACK MsgWndProc(HWND hWnd, UINT message, WPARAM wParam,
 
     int dx = GetRawInputDeltaX(lParam);
 
-    ULONGLONG now = GetTickCount64();
-    bool isMouseSuspended =
-        (g_mouseSuspendedUntil > 0 && now < g_mouseSuspendedUntil);
-
     const bool allowAngleUpdate =
-        (g_fortniteFocusedCache && !g_isCursorVisible && !isMouseSuspended);
+        (g_fortniteFocusedCache && !g_isCursorVisible && !g_blockInputActive.load());
 
     if (allowAngleUpdate) {
       g_logic.Update(dx);

@@ -21,7 +21,6 @@ std::atomic<bool> g_forceRedraw(true);
 std::atomic<bool> g_keybindAssignmentActive(false);
 std::atomic<long long> g_detectionDelayMs(0);
 std::atomic<bool> g_showDebugOverlay(false);
-std::atomic<ULONGLONG> g_mouseSuspendedUntil(0);
 std::atomic<int> g_lockTriggerReason(0);
 std::atomic<bool> g_atomicShieldEnabled(true);
 std::atomic<bool> g_directHardwareModeEnabled(true);
@@ -34,9 +33,6 @@ std::atomic<bool> g_diagNoRawInput(false);
 std::atomic<bool> g_diagNoTopmost(false);
 std::atomic<bool> g_diagNoTimer(false);
 
-std::mutex g_lockMutex;
-std::mutex g_blockInputMutex;
-std::string g_nitroSyncLog = "Ghosting logic disabled";
 std::atomic<int> g_peakMatchCount{0};
 std::atomic<int> g_requiredMatchCount{0};
 std::atomic<int> g_scannerCpuPct(0);
