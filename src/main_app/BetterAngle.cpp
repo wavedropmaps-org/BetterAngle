@@ -629,7 +629,7 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
   case WM_TRAYICON:
     if (lParam == WM_RBUTTONUP) {
       ShowTrayContextMenu(hWnd);
-    } else if (lParam == WM_LBUTTONDBLCLK) {
+    } else if (lParam == WM_LBUTTONUP || lParam == WM_LBUTTONDBLCLK) {
       ShowControlPanel();
     }
     return 0;
@@ -845,9 +845,8 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
         GetCursorPos(&pt);
 
         bool fnFocused = IsFortniteForeground();
-        // Ctrl+drag: user holds Ctrl in-game to reposition the HUD overlay.
-        // Without Ctrl, dragging only works when Fortnite is not in focus.
-        bool canDrag = !fnFocused || (ctrlDown && fnFocused);
+        // Dragging the HUD requires holding Ctrl to prevent accidental drags
+        bool canDrag = ctrlDown;
 
         if (lDown && !g_isDraggingHUD && canDrag) {
           if (pt.x >= g_hudX && pt.x <= g_hudX + 260 && pt.y >= g_hudY &&
@@ -919,8 +918,17 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
       bool overlayVisible = fortniteFocused || panelVisible || g_isDraggingHUD ||
                             (g_currentSelection != NONE);
 
-      DrawOverlay(hWnd, g_interpolatedAngle.load(), g_showCrosshair,
-                  overlayVisible);
+      // Throttle overlay redraws to ~10fps when Fortnite is not the foreground window.
+      // 100fps UpdateLayeredWindow calls cause DWM contention during Alt+Tab.
+      bool throttle = !fortniteFocused && g_currentSelection == NONE;
+      static ULONGLONG s_lastThrottledDraw = 0;
+      ULONGLONG nowMs = GetTickCount64();
+
+      if (!throttle || (nowMs - s_lastThrottledDraw >= 100)) {
+        if (throttle) s_lastThrottledDraw = nowMs;
+        DrawOverlay(hWnd, g_interpolatedAngle.load(), g_showCrosshair,
+                    overlayVisible);
+      }
     } else if (wParam == 2) { // 30s Auto-Save Periodic Timer
       SaveSettings();
       if (!g_allProfiles.empty() &&
@@ -973,8 +981,7 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
 
   case WM_CLOSE:
     g_running = false;
-    PostQuitMessage(0);
-    QCoreApplication::quit();
+    DestroyWindow(hWnd);
     return 0;
 
   case WM_DESTROY:
@@ -1152,6 +1159,22 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
   LOG_INFO("Control panel created: hwnd=0x%p", g_hPanel);
   LogWindowInfo(L"Control panel handle", g_hPanel);
 
+  // Hidden owner window — owned popups are excluded from Alt+Tab AND
+  // Win+Tab (Task View) by the Windows shell.  Without this the HUD
+  // overlay appears as a separate thumbnail in the task switcher.
+  WNDCLASS wcOwner = {0};
+  wcOwner.lpfnWndProc = DefWindowProc;
+  wcOwner.hInstance = hInstance;
+  wcOwner.lpszClassName = L"BetterAngleHUDOwner";
+  RegisterClass(&wcOwner);
+  HWND hHUDOwner = CreateWindowEx(
+      WS_EX_TOOLWINDOW, L"BetterAngleHUDOwner", L"",
+      WS_POPUP, 0, 0, 0, 0, NULL, NULL, hInstance, NULL);
+  // Owner must be "visible" for Windows to suppress the owned window
+  // from Task View.  Zero-sized popup is invisible to the user but
+  // satisfies the shell's ownership chain requirement.
+  ShowWindow(hHUDOwner, SW_SHOWNOACTIVATE);
+
   // Phase 3: Create HUD Window (Transparent Overlay)
   WNDCLASS wc = {0};
   wc.lpfnWndProc = HUDWndProc;
@@ -1171,11 +1194,14 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
   if (!g_diagNoTopmost.load()) {
     exStyle |= WS_EX_TOPMOST;
   }
+  
+  // Add WS_EX_TOOLWINDOW just to be extra safe
+  exStyle |= WS_EX_TOOLWINDOW;
 
   g_hHUD = CreateWindowEx(
       exStyle,
       L"BetterAngleHUD", L"BetterAngle HUD", WS_POPUP, screenX, screenY,
-      screenW, screenH, NULL, NULL, hInstance, NULL);
+      screenW, screenH, hHUDOwner, NULL, hInstance, NULL);
 
   LOG_INFO("HUD created: hwnd=0x%p", g_hHUD);
   LogWindowInfo(L"HUD handle", g_hHUD);
