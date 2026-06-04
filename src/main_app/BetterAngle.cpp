@@ -627,9 +627,11 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
     return 0;
 
   case WM_TRAYICON:
-    if (lParam == WM_RBUTTONUP) {
+    // NOTIFYICON_VERSION_4 changes the messages sent in lParam.
+    // Right-click sends WM_CONTEXTMENU. Left-click sends NIN_SELECT.
+    if (LOWORD(lParam) == WM_CONTEXTMENU || LOWORD(lParam) == WM_RBUTTONUP) {
       ShowTrayContextMenu(hWnd);
-    } else if (lParam == WM_LBUTTONUP || lParam == WM_LBUTTONDBLCLK) {
+    } else if (LOWORD(lParam) == NIN_SELECT || LOWORD(lParam) == NIN_KEYSELECT || LOWORD(lParam) == WM_LBUTTONUP || LOWORD(lParam) == WM_LBUTTONDBLCLK) {
       ShowControlPanel();
     }
     return 0;
