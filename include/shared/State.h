@@ -61,7 +61,7 @@ extern std::atomic<UINT> g_mouseButtonModifiers[6];
 #ifndef V_MAJ
 #define V_MAJ 5
 #define V_MIN 5
-#define V_PAT 296
+#define V_PAT 297
 #endif
 
 #define VERSION_STR APP_STR_Y(V_MAJ) "." APP_STR_Y(V_MIN) "." APP_STR_Y(V_PAT)
