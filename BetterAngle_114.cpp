@@ -310,7 +310,7 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
   case WM_TRAYICON:
     if (lParam == WM_RBUTTONUP) {
       ShowTrayContextMenu(hWnd);
-    } else if (lParam == WM_LBUTTONDBLCLK) {
+    } else if (lParam == WM_LBUTTONUP || lParam == WM_LBUTTONDBLCLK) {
       ShowControlPanel();
     }
     return 0;

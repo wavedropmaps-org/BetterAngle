@@ -55,10 +55,9 @@ Window {
     Connections {
         target: backend
         onShowControlPanelRequested: {
-            // If the window is up and visible, minimise it so it stays in the
-            // taskbar and Alt+Tab / Win+Tab.  Never use hide() — that removes
-            // the window from the shell entirely.
-            if (mainWindow.visible && mainWindow.visibility !== Window.Minimized) {
+            // If the window is currently the active foreground window, minimise it.
+            // If it's in the background or minimised, restore and focus it.
+            if (mainWindow.active) {
                 mainWindow.showMinimized()
             } else {
                 mainWindow.showNormal()
