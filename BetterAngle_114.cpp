@@ -404,9 +404,10 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
     if (wParam == 1) { // 60fps HUD / Input processing timer
       if (g_currentSelection == NONE) {
         bool lDown = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
+        bool ctrlDown = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
         POINT pt;
         GetCursorPos(&pt);
-        if (lDown && !g_isDraggingHUD) {
+        if (lDown && ctrlDown && !g_isDraggingHUD) {
           if (pt.x >= g_hudX && pt.x <= g_hudX + 260 && pt.y >= g_hudY &&
               pt.y <= g_hudY + 150) {
             g_isDraggingHUD = true;
@@ -621,7 +622,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
   RegisterClass(&wcOwner);
   HWND hHUDOwner = CreateWindowEx(
       WS_EX_TOOLWINDOW, L"BetterAngleHUDOwner", L"",
-      WS_OVERLAPPED, 0, 0, 0, 0, NULL, NULL, hInstance, NULL);
+      WS_POPUP, 0, 0, 0, 0, NULL, NULL, hInstance, NULL);
+  // Owner must be "visible" for Windows to suppress the owned window
+  // from Task View.  Zero-sized popup is invisible to the user but
+  // satisfies the shell's ownership chain requirement.
+  ShowWindow(hHUDOwner, SW_SHOWNOACTIVATE);
 
   // Phase 3: Create HUD Window (Transparent Overlay)
   WNDCLASS wc = {0};
@@ -646,7 +651,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
   LOG_INFO("HUD created: hwnd=0x%p", g_hHUD);
   LogWindowInfo(g_hHUD);
   ShowControlPanel(); // Force Dashboard to show on startup
-  ShowWindow(g_hHUD, SW_SHOW);
+  ShowWindow(g_hHUD, SW_SHOWNOACTIVATE);
   SetWindowPos(g_hHUD, HWND_TOPMOST, 0, 0, 0, 0,
                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
   UpdateWindow(g_hHUD);
