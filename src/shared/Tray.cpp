@@ -46,8 +46,17 @@ void ShowTrayContextMenu(HWND hwnd) {
     GetCursorPos(&pt);
     
     SetForegroundWindow(hwnd);
-    TrackPopupMenu(hMenu, TPM_BOTTOMALIGN | TPM_LEFTALIGN, pt.x, pt.y, 0, hwnd, NULL);
+    int cmd = TrackPopupMenu(hMenu, TPM_RETURNCMD | TPM_NONOTIFY | TPM_BOTTOMALIGN | TPM_LEFTALIGN, pt.x, pt.y, 0, hwnd, NULL);
+    
+    // Post benign message to the window to ensure menu closes properly if user clicks away
+    // (This is a documented Windows bug workaround)
+    PostMessage(hwnd, WM_NULL, 0, 0);
+
     DestroyMenu(hMenu);
+
+    if (cmd == ID_TRAY_EXIT) {
+        PostMessage(hwnd, WM_CLOSE, 0, 0);
+    }
 }
 
 void RemoveSystrayIcon(HWND hwnd) {
