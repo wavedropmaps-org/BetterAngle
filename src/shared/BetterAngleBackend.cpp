@@ -460,6 +460,30 @@ void BetterAngleBackend::requestShowControlPanel() {
   emit showControlPanelRequested();
 }
 
+// Track main window position so the HUD angle readout follows it.
+static int s_lastWinX = INT_MIN;
+static int s_lastWinY = INT_MIN;
+
+void BetterAngleBackend::syncHudToWindow(int x, int y, int /*w*/, int /*h*/) {
+  if (s_lastWinX == INT_MIN) {
+    // First call — record baseline, don't move the HUD.
+    s_lastWinX = x;
+    s_lastWinY = y;
+    return;
+  }
+
+  int dx = x - s_lastWinX;
+  int dy = y - s_lastWinY;
+
+  if (dx != 0 || dy != 0) {
+    g_hudX += dx;
+    g_hudY += dy;
+    s_lastWinX = x;
+    s_lastWinY = y;
+    g_forceRedraw = true;
+  }
+}
+
 QStringList BetterAngleBackend::crosshairPresetNames() const {
   QStringList list;
   if (g_allProfiles.empty())

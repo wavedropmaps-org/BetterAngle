@@ -443,11 +443,24 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
       if (ang != lastAngle || g_isDiving != lastDiving ||
           g_isCursorVisible != lastCursor || g_currentSelection != NONE ||
           g_showCrosshair || pulseActive || g_forceRedraw.load()) {
-        lastAngle = ang;
-        lastDiving = g_isDiving;
-        lastCursor = g_isCursorVisible;
-        g_forceRedraw.store(false);
-        DrawOverlay(hWnd, ang, g_detectionRatio, g_showCrosshair);
+
+        // Throttle overlay redraws to ~10fps when Fortnite is not the
+        // foreground window.  The 60fps UpdateLayeredWindow calls cause
+        // DWM contention during Alt+Tab transitions, making tabbing in
+        // and out feel very laggy.
+        bool throttle = !IsFortniteForeground() && !g_debugMode &&
+                        g_currentSelection == NONE;
+        static ULONGLONG s_lastThrottledDraw = 0;
+        ULONGLONG nowMs = GetTickCount64();
+
+        if (!throttle || (nowMs - s_lastThrottledDraw >= 100)) {
+          if (throttle) s_lastThrottledDraw = nowMs;
+          lastAngle = ang;
+          lastDiving = g_isDiving;
+          lastCursor = g_isCursorVisible;
+          g_forceRedraw.store(false);
+          DrawOverlay(hWnd, ang, g_detectionRatio, g_showCrosshair);
+        }
       }
     } else if (wParam == 2) { // 30s Auto-Save Periodic Timer
       SaveSettings();
@@ -598,6 +611,18 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
   LOG_INFO("Control panel created: hwnd=0x%p", g_hPanel);
   LogWindowInfo(g_hPanel);
 
+  // Hidden owner window — owned popups are excluded from Alt+Tab AND
+  // Win+Tab (Task View) by the Windows shell.  Without this the HUD
+  // overlay appears as a separate thumbnail in the task switcher.
+  WNDCLASS wcOwner = {0};
+  wcOwner.lpfnWndProc = DefWindowProc;
+  wcOwner.hInstance = hInstance;
+  wcOwner.lpszClassName = L"BetterAngleHUDOwner";
+  RegisterClass(&wcOwner);
+  HWND hHUDOwner = CreateWindowEx(
+      WS_EX_TOOLWINDOW, L"BetterAngleHUDOwner", L"",
+      WS_OVERLAPPED, 0, 0, 0, 0, NULL, NULL, hInstance, NULL);
+
   // Phase 3: Create HUD Window (Transparent Overlay)
   WNDCLASS wc = {0};
   wc.lpfnWndProc = HUDWndProc;
@@ -615,7 +640,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
   g_hHUD = CreateWindowEx(
       WS_EX_TOPMOST | WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW,
       L"BetterAngleHUD", L"BetterAngle HUD", WS_POPUP, screenX, screenY,
-      screenW, screenH, NULL, NULL, hInstance, NULL);
+      screenW, screenH, hHUDOwner, NULL, hInstance, NULL);
 
   AddSystrayIcon(g_hHUD);
   LOG_INFO("HUD created: hwnd=0x%p", g_hHUD);

@@ -173,6 +173,7 @@ public:
   Q_INVOKABLE void checkForUpdates();
   Q_INVOKABLE void downloadUpdate();
   Q_INVOKABLE void requestShowControlPanel();
+  Q_INVOKABLE void syncHudToWindow(int x, int y, int w, int h);
 
   // Crosshair preset management
   Q_INVOKABLE QStringList crosshairPresetNames() const;

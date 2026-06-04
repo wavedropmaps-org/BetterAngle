@@ -1,5 +1,5 @@
-### BetterAngle Pro v5.5.291
-- **Fix: Restore FOV Transition Lock**. Both glide→dive and dive→glide transitions now correctly block input for 700ms on a detached thread, preventing mouse movement from corrupting the angle during the sensitivity scale switch.
-- **Fix: Overlay Disappearing Bug**. Re-assert `HWND_TOPMOST` on the HUD overlay when Fortnite regains focus after an Alt-Tab so the overlay doesn't disappear behind the game window.
-- **Tweak: Alt-Tab Cooldown**. Increased the Alt-Tab return `BlockInput` duration from 200ms to 300ms.
-- **Cleanup: Dead Input Locking Logic**. Removed unused variables and mutexes (e.g., `g_mouseSuspendedUntil`, `g_lockMutex`, `g_blockInputMutex`, `FlushPendingInputMessages`) that were remnants of the old locking system.
+### BetterAngle Pro v5.5.292
+- **Fix: Alt+Tab Lag**. Throttled overlay redraws to ~10fps when Fortnite is not the foreground window. The 60fps `UpdateLayeredWindow` calls were causing DWM contention during Alt+Tab transitions, making tabbing in and out feel very laggy. Full 60fps is maintained while in-game.
+- **Fix: HUD Overlay Hidden from Task Switcher**. The HUD overlay no longer appears as a separate "BetterAngle HUD" thumbnail in Alt+Tab or Win+Tab (Task View). Added a hidden owner window — owned popup windows are excluded from the Windows shell's task switcher.
+- **Fix: Dashboard Taskbar & Alt+Tab Visibility**. The control panel now minimises to the taskbar instead of fully hiding. This keeps it visible in Alt+Tab, Win+Tab, and the taskbar. Clicking the taskbar icon properly restores and focuses the window (required special handling for frameless Qt windows).
+- **Feature: HUD Follows Dashboard**. The HUD angle readout now tracks with the dashboard window — dragging the control panel to a different position or monitor moves the HUD by the same offset.

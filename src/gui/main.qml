@@ -39,13 +39,29 @@ Window {
         y = Screen.height / 2 - height / 2
     }
 
+    // When the dashboard is dragged, keep the HUD angle readout attached.
+    onXChanged: if (backend) backend.syncHudToWindow(x, y, width, height)
+    onYChanged: if (backend) backend.syncHudToWindow(x, y, width, height)
+
+    // Restore + focus when the user clicks the taskbar icon (frameless windows
+    // need this because the shell cannot manage them natively).
+    onVisibilityChanged: {
+        if (visibility === Window.Windowed || visibility === Window.Maximized) {
+            raise()
+            requestActivate()
+        }
+    }
+
     Connections {
         target: backend
         onShowControlPanelRequested: {
-            if (mainWindow.visible) {
-                mainWindow.hide()
+            // If the window is up and visible, minimise it so it stays in the
+            // taskbar and Alt+Tab / Win+Tab.  Never use hide() — that removes
+            // the window from the shell entirely.
+            if (mainWindow.visible && mainWindow.visibility !== Window.Minimized) {
+                mainWindow.showMinimized()
             } else {
-                mainWindow.show()
+                mainWindow.showNormal()
                 mainWindow.raise()
                 mainWindow.requestActivate()
             }
