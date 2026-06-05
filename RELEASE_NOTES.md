@@ -1,5 +1,5 @@
 ### BetterAngle Pro v5.5.314
-- Automated build release.
+- **Performance: Massive CPU Reduction in Detector Thread**. The ROI scanner thread was busy-spinning on `_mm_pause()` with no sleep, pegging a full CPU core at 100% at all times — including when Fortnite wasn't even focused (where it did nothing but spin). It now throttles properly: a 4ms sleep between scans while in-game (~200Hz detection, still far faster than dive/glide edge detection needs since the transition lock runs for 700ms) and a 150ms sleep when tabbed out or selecting an ROI/colour. This drops idle/background CPU usage dramatically and significantly lowers in-game CPU with no perceptible change to detection responsiveness. The scanner-CPU% debug gauge now reflects the real loop period.
 
 ### BetterAngle Pro v5.5.313
 - **Fix: Bogus "NOT DETECTING ? CHECK ROI" Warning**. Removed the HUD warning added in v5.5.311. It was triggered by `matchPct == 0`, but that match ratio measures the FOV/glide indicator colour inside the ROI ? which is legitimately 0 during most of normal gameplay (the indicator is only on-screen at specific moments). The angle readout updates from raw mouse deltas independently of ROI detection, so the warning fired constantly even when everything was working correctly. Fortnite detection status remains available in the Debug tab where it belongs.

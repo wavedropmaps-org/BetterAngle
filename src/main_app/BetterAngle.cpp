@@ -2,7 +2,6 @@
 #include <atomic>
 #include <cmath>
 #include <dwmapi.h>
-#include <emmintrin.h> // SSE2: _mm_pause for zero-latency spin-wait
 #include <fstream>
 #include <gdiplus.h>
 #include <iostream>
@@ -100,6 +99,13 @@ void CALLBACK WinEventProc(HWINEVENTHOOK hWinEventHook, DWORD event, HWND hwnd,
 }
 
 // FOV Detector Thread - Now focused solely on ROI scanning
+// Inter-scan sleep while Fortnite is focused. ~200Hz detection cadence —
+// far faster than needed for dive/glide edge detection (the transition lock
+// runs for 700ms) while keeping the scanner near-idle on the CPU.
+static const DWORD kDetectorScanSleepMs = 4;
+// Sleep while Fortnite is NOT focused. Nothing to scan, so stay near-idle.
+static const DWORD kDetectorIdleSleepMs = 150;
+
 void DetectorThread() {
   bool lastDiving = false;
   ULONGLONG peakMatchTimestamp = 0;
@@ -139,7 +145,11 @@ void DetectorThread() {
         g_detectionDelayMs = scanMs;
 
         // Scanner CPU %: time spent scanning vs total loop period
-        int cpuPct = (scanMs > 0) ? (int)((scanMs * 100) / (scanMs + 10)) : 0;
+        // (scan time + the inter-scan sleep below).
+        int cpuPct =
+            (scanMs > 0)
+                ? (int)((scanMs * 100) / (scanMs + kDetectorScanSleepMs))
+                : 0;
         g_scannerCpuPct = cpuPct;
 
         // Peak match tracking (2s decay window)
@@ -215,7 +225,14 @@ void DetectorThread() {
       g_isDiving = nowDiving;
       g_logic.SetDivingState(nowDiving);
     }
-    _mm_pause(); // Zero-latency spin-wait (nanosecond response)
+
+    // Throttle the loop instead of busy-spinning. Back-to-back scans (or a
+    // bare _mm_pause when idle) peg a full CPU core for no benefit. Sleep a
+    // short slice while in-game for a snappy ~200Hz scan, and a long slice
+    // when tabbed out or selecting an ROI/colour (nothing to detect then).
+    bool active = g_fortniteFocusedCache.load() && g_currentSelection == NONE &&
+                  !g_allProfiles.empty();
+    Sleep(active ? kDetectorScanSleepMs : kDetectorIdleSleepMs);
   }
 }
 
