@@ -1,3 +1,6 @@
+### BetterAngle Pro v5.5.310
+- Automated build release.
+
 ### BetterAngle Pro v5.5.309
 - **Fix: Crosshair and Decimal HUD Visible When Fortnite Not Focused**. The overlay was staying visible whenever the BetterAngle dashboard window was open, even when the user was in Discord, Chrome, or any other app. `IsWindowVisible` returns `true` if a window has `WS_VISIBLE` regardless of whether it is the active foreground window, so `panelVisible` was almost always `true`. Removed `panelVisible` from the overlay visibility condition. The overlay now only shows when Fortnite is the foreground window, when the HUD is being actively dragged (Ctrl+drag), or during ROI/colour selection.
 
