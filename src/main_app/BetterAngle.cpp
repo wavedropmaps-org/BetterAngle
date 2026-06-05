@@ -904,6 +904,16 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
       // mouse-delta accumulator on every frame for zero perceived delay.
       g_interpolatedAngle = ang;
 
+      // Update tray tooltip with current angle (~2/s, no need to spam NIM_MODIFY)
+      {
+        static ULONGLONG s_lastTrayTip = 0;
+        ULONGLONG nowMs = GetTickCount64();
+        if (nowMs - s_lastTrayTip >= 500) {
+          s_lastTrayTip = nowMs;
+          UpdateTrayTooltip(hWnd, ang);
+        }
+      }
+
       // Clear the forced redraw flag occasionally set elsewhere
       g_forceRedraw.store(false);
 
@@ -1244,6 +1254,33 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
   UpdateWindow(g_hHUD);
   SetTimer(g_hHUD, 1, 10, NULL);    // 100fps (~10ms) Repaint Timer
   SetTimer(g_hHUD, 2, 30000, NULL); // 30s Auto-Save Timer
+
+  // Startup monitor auto-detection: if Fortnite is already running when
+  // BetterAngle launches, snap the HUD to its monitor immediately.
+  {
+    HWND fnWnd = FindWindowW(NULL, L"Fortnite  ");
+    if (!fnWnd) fnWnd = FindWindowW(NULL, L"Fortnite");
+    if (fnWnd && IsWindow(fnWnd)) {
+      HMONITOR hFnMon = MonitorFromWindow(fnWnd, MONITOR_DEFAULTTONEAREST);
+      struct FindData { HMONITOR target; int cur; int found; };
+      FindData fd = {hFnMon, 0, -1};
+      EnumDisplayMonitors(NULL, NULL,
+        [](HMONITOR h, HDC, LPRECT, LPARAM p) -> BOOL {
+          auto *d = reinterpret_cast<FindData *>(p);
+          if (h == d->target) { d->found = d->cur; return FALSE; }
+          d->cur++;
+          return TRUE;
+        }, reinterpret_cast<LPARAM>(&fd));
+      if (fd.found >= 0 && fd.found != g_screenIndex) {
+        g_screenIndex = fd.found;
+        RECT mRect = GetMonitorRectByIndex(g_screenIndex);
+        SetWindowPos(g_hHUD, HWND_TOPMOST, mRect.left, mRect.top,
+                     mRect.right - mRect.left, mRect.bottom - mRect.top,
+                     SWP_NOACTIVATE | SWP_SHOWWINDOW);
+        LOG_INFO("Startup monitor auto-detect: Fortnite on monitor %d", g_screenIndex);
+      }
+    }
+  }
 
   std::thread detThread(DetectorThread);
   std::thread perfThread(PerformanceMonitorThread);

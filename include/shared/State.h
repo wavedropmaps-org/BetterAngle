@@ -117,6 +117,8 @@ extern std::atomic<bool> g_isCursorVisible;
 extern AngleLogic g_logic;
 extern int g_hudX;
 extern int g_hudY;
+extern int g_dashX;
+extern int g_dashY;
 extern bool g_isDraggingHUD;
 extern POINT g_dragStartHUD;
 extern POINT g_dragStartMouse;

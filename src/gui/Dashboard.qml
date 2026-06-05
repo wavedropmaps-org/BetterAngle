@@ -180,6 +180,20 @@ Item {
                         }
                     }
 
+                    Button {
+                        text: "RESET HUD POSITION"
+                        width: parent.width
+                        height: 36
+                        contentItem: Text { text: parent.text; color: "white"; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; font.pixelSize: 12 }
+                        background: Rectangle {
+                            color: parent.hovered ? "#332233" : "#1e1228"
+                            radius: 4
+                            border.color: "#9944cc"
+                            border.width: 1
+                        }
+                        onClicked: backend.resetHudPosition()
+                    }
+
                     Column {
                         spacing: 4
                         width: parent.width
@@ -1215,6 +1229,10 @@ Item {
                             RowLayout { width: parent.width
                                 Text { text: "Fortnite Focused:"; color: "#aaa"; font.pixelSize: 13; Layout.fillWidth: true }
                                 Text { text: backend.fnFocused ? "YES" : "NO"; color: backend.fnFocused ? "#00ffcc" : "#ff4c4c"; font.bold: true; font.pixelSize: 13 }
+                            }
+                            RowLayout { width: parent.width
+                                Text { text: "Fortnite Monitor:"; color: "#aaa"; font.pixelSize: 13; Layout.fillWidth: true }
+                                Text { text: backend.fortniteMonitorLabel; color: backend.fnRunning ? "#00ffcc" : "#ff4c4c"; font.bold: true; font.pixelSize: 13 }
                             }
                             RowLayout { width: parent.width
                                 Text { text: "Mouse in Fortnite Focus:"; color: "#aaa"; font.pixelSize: 13; Layout.fillWidth: true }

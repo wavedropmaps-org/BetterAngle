@@ -71,10 +71,17 @@ class BetterAngleBackend : public QObject {
   Q_PROPERTY(QString inputLockStatus READ inputLockStatus NOTIFY debugDataChanged)
   Q_PROPERTY(QString nitroSyncLog READ nitroSyncLog NOTIFY debugDataChanged)
 
+  // Fortnite monitor label (debug tab)
+  Q_PROPERTY(QString fortniteMonitorLabel READ fortniteMonitorLabel NOTIFY debugDataChanged)
+
   // Auto-Mantle Diagnostic Toggles (v5.5.285)
   Q_PROPERTY(bool diagNoRawInput READ diagNoRawInput WRITE setDiagNoRawInput NOTIFY debugDataChanged)
   Q_PROPERTY(bool diagNoTopmost READ diagNoTopmost WRITE setDiagNoTopmost NOTIFY debugDataChanged)
   Q_PROPERTY(bool diagNoTimer READ diagNoTimer WRITE setDiagNoTimer NOTIFY debugDataChanged)
+
+  // Saved dashboard window position (restored on startup)
+  Q_PROPERTY(int savedDashX READ savedDashX CONSTANT)
+  Q_PROPERTY(int savedDashY READ savedDashY CONSTANT)
 
   // Custom Keybinds
   Q_PROPERTY(
@@ -161,6 +168,10 @@ public:
   QString nitroSyncLog() const;
   Q_INVOKABLE void refreshDebugData();
 
+  QString fortniteMonitorLabel() const;
+  int savedDashX() const;
+  int savedDashY() const;
+
   // Auto-Mantle Diagnostic Toggles
   bool diagNoRawInput() const;
   void setDiagNoRawInput(bool v);
@@ -174,6 +185,8 @@ public:
   Q_INVOKABLE void downloadUpdate();
   Q_INVOKABLE void requestShowControlPanel();
   Q_INVOKABLE void syncHudToWindow(int x, int y, int w, int h);
+  Q_INVOKABLE void resetHudPosition();
+  Q_INVOKABLE void saveDashboardPosition(int x, int y);
 
   // Crosshair preset management
   Q_INVOKABLE QStringList crosshairPresetNames() const;

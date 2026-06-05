@@ -1,5 +1,10 @@
 ### BetterAngle Pro v5.5.311
-- Automated build release.
+- **QoL: Startup Monitor Auto-Detection**. If Fortnite is already running when BetterAngle launches, the HUD now snaps to Fortnite's monitor immediately instead of defaulting to monitor 0.
+- **QoL: HUD Position Reset Button**. Added a "Reset HUD Position" button in the General tab (Display & Monitor section). Moves the HUD back to the default top-left position — recovery path for users who accidentally drag it off-screen.
+- **QoL: Fortnite Monitor Status in Debug Tab**. The Debug tab now shows which monitor Fortnite is running on (e.g. "Monitor 2 (Active)") alongside the existing Running/Focused rows.
+- **QoL: "NOT DETECTING — CHECK ROI" Overlay Warning**. When Fortnite is the foreground window but detection ratio is 0%, a small warning appears on the HUD so users know to re-set their ROI instead of wondering why the angle isn't updating.
+- **QoL: Dashboard Window Position Remembered**. The control panel now restores to wherever it was last positioned when relaunching, instead of always opening at screen centre.
+- **QoL: Tray Tooltip Shows Current Angle**. Hovering the system tray icon now shows the live angle readout (e.g. "BetterAngle Pro  |  45.3°"), updated every 500ms.
 
 ### BetterAngle Pro v5.5.310
 - **Fix: ESC Opens File Explorer / Switches Tabs (regression)**. Two compounding issues caused the overlay to intercept keypresses from other apps. (1) The click-through logic was removing `WS_EX_TRANSPARENT` whenever Fortnite was not focused ? making the full-screen invisible overlay capture all mouse clicks from Chrome, Discord, etc. and potentially steal keyboard focus. Fixed: `WS_EX_TRANSPARENT` is now only removed when the user is actively dragging the HUD, doing ROI/colour selection, or holding Ctrl in-game. (2) `WS_EX_NOACTIVATE` was missing from the HUD window creation, meaning any click that reached the overlay could give it focus. Added `WS_EX_NOACTIVATE` to the initial `exStyle` so the overlay can never take keyboard focus regardless of transparency state.

@@ -35,13 +35,32 @@ Window {
     }
 
     Component.onCompleted: {
-        x = Screen.width / 2 - width / 2
-        y = Screen.height / 2 - height / 2
+        // Restore last saved position; fall back to screen centre on first run.
+        var sx = backend ? backend.savedDashX : -2147483648
+        var sy = backend ? backend.savedDashY : -2147483648
+        if (sx !== -2147483648 && sy !== -2147483648) {
+            x = sx
+            y = sy
+        } else {
+            x = Screen.width / 2 - width / 2
+            y = Screen.height / 2 - height / 2
+        }
     }
 
-    // When the dashboard is dragged, keep the HUD angle readout attached.
-    onXChanged: if (backend) backend.syncHudToWindow(x, y, width, height)
-    onYChanged: if (backend) backend.syncHudToWindow(x, y, width, height)
+    // When the dashboard is dragged, keep the HUD angle readout attached and
+    // persist the new window position so it restores on next launch.
+    onXChanged: {
+        if (backend) {
+            backend.syncHudToWindow(x, y, width, height)
+            backend.saveDashboardPosition(x, y)
+        }
+    }
+    onYChanged: {
+        if (backend) {
+            backend.syncHudToWindow(x, y, width, height)
+            backend.saveDashboardPosition(x, y)
+        }
+    }
 
     // Restore + focus when the user clicks the taskbar icon (frameless windows
     // need this because the shell cannot manage them natively).

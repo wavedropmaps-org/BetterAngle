@@ -1102,6 +1102,44 @@ static bool IsFortniteExe(const wchar_t *processName) {
           _wcsnicmp(processName, L"FortniteClient", 14) == 0);
 }
 
+void BetterAngleBackend::resetHudPosition() {
+  g_hudX = 40;
+  g_hudY = 40;
+  SaveSettings();
+  if (g_hHUD) InvalidateRect(g_hHUD, NULL, FALSE);
+}
+
+void BetterAngleBackend::saveDashboardPosition(int x, int y) {
+  g_dashX = x;
+  g_dashY = y;
+  SaveSettings();
+}
+
+int BetterAngleBackend::savedDashX() const { return g_dashX; }
+int BetterAngleBackend::savedDashY() const { return g_dashY; }
+
+QString BetterAngleBackend::fortniteMonitorLabel() const {
+  HWND fn = FindWindowW(NULL, L"Fortnite  ");
+  if (!fn) fn = FindWindowW(NULL, L"Fortnite");
+  if (!fn || !IsWindow(fn))
+    return "Not Running";
+
+  HMONITOR hMon = MonitorFromWindow(fn, MONITOR_DEFAULTTONEAREST);
+  struct FindData { HMONITOR target; int cur; int found; };
+  FindData fd = {hMon, 0, -1};
+  EnumDisplayMonitors(NULL, NULL,
+    [](HMONITOR h, HDC, LPRECT, LPARAM p) -> BOOL {
+      auto *d = reinterpret_cast<FindData *>(p);
+      if (h == d->target) { d->found = d->cur; return FALSE; }
+      d->cur++;
+      return TRUE;
+    }, reinterpret_cast<LPARAM>(&fd));
+
+  int idx = (fd.found >= 0) ? fd.found : g_screenIndex;
+  bool focused = g_fortniteFocusedCache.load();
+  return QString("Monitor %1%2").arg(idx + 1).arg(focused ? "  (Active)" : "");
+}
+
 bool BetterAngleBackend::fnRunning() const {
   HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
   if (hSnap == INVALID_HANDLE_VALUE)

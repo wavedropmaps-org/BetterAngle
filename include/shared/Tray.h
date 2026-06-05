@@ -10,5 +10,6 @@
 void AddSystrayIcon(HWND hwnd, HINSTANCE hInstance);
 void ShowTrayContextMenu(HWND hwnd);
 void RemoveSystrayIcon(HWND hwnd);
+void UpdateTrayTooltip(HWND hwnd, float angle);
 
 #endif

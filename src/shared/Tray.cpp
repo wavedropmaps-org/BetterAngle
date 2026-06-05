@@ -75,6 +75,15 @@ void ShowTrayContextMenu(HWND hwnd) {
     }
 }
 
+void UpdateTrayTooltip(HWND hwnd, float angle) {
+    NOTIFYICONDATA nid = { sizeof(NOTIFYICONDATA) };
+    nid.hWnd = hwnd;
+    nid.uID = 1;
+    nid.uFlags = NIF_TIP;
+    swprintf_s(nid.szTip, _countof(nid.szTip), L"BetterAngle Pro  |  %.1f°", angle);
+    Shell_NotifyIcon(NIM_MODIFY, &nid);
+}
+
 void RemoveSystrayIcon(HWND hwnd) {
     NOTIFYICONDATA nid = { sizeof(NOTIFYICONDATA) };
     nid.hWnd = hwnd;

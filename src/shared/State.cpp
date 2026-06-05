@@ -130,6 +130,8 @@ void LoadSettings() {
 
     g_hudX = eInt("hudX", 40);
     g_hudY = eInt("hudY", 40);
+    g_dashX = eInt("dashX", INT_MIN);
+    g_dashY = eInt("dashY", INT_MIN);
 
     g_crossPulse = eFloat("crossPulse", 0.0f) > 0.5f;
     g_showCrosshair = eFloat("showCrosshair", 1.0f) > 0.5f;
@@ -185,6 +187,8 @@ void SaveSettings() {
   oss << "{\n";
   oss << "  \"hudX\": " << g_hudX << ",\n";
   oss << "  \"hudY\": " << g_hudY << ",\n";
+  if (g_dashX != INT_MIN) oss << "  \"dashX\": " << g_dashX << ",\n";
+  if (g_dashY != INT_MIN) oss << "  \"dashY\": " << g_dashY << ",\n";
   oss << "  \"showCrosshair\": " << (g_showCrosshair ? 1 : 0) << ",\n";
   oss << "  \"selectedProfileIdx\": " << g_selectedProfileIdx << ",\n";
   oss << "  \"screenIndex\": " << g_screenIndex << ",\n";
@@ -230,6 +234,8 @@ AngleLogic g_logic(0.05);
 
 int g_hudX = -1;
 int g_hudY = 40;
+int g_dashX = INT_MIN;
+int g_dashY = INT_MIN;
 bool g_isDraggingHUD = false;
 POINT g_dragStartHUD = {0, 0};
 POINT g_dragStartMouse = {0, 0};
