@@ -941,7 +941,7 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
     return 0;
   }
 
-  case WM_USER + 100: {
+  case WM_USER + 101: {
     int newScreenIndex = (int)wParam;
     if (newScreenIndex != g_screenIndex) {
       g_screenIndex = newScreenIndex;

@@ -485,7 +485,7 @@ void BetterAngleBackend::syncHudToWindow(int x, int y, int w, int h) {
     if (g_hHUD) {
       // Must post message to Win32 thread! Calling SetWindowPos from the Qt background thread
       // causes severe DWM desyncs and ghost windows.
-      PostMessageW(g_hHUD, WM_USER + 100, data.foundIndex, 0);
+      PostMessageW(g_hHUD, WM_USER + 101, data.foundIndex, 0);
     }
   }
 }
