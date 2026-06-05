@@ -1,5 +1,8 @@
+### BetterAngle Pro v5.5.314
+- Automated build release.
+
 ### BetterAngle Pro v5.5.313
-- **Fix: Bogus "NOT DETECTING — CHECK ROI" Warning**. Removed the HUD warning added in v5.5.311. It was triggered by `matchPct == 0`, but that match ratio measures the FOV/glide indicator colour inside the ROI — which is legitimately 0 during most of normal gameplay (the indicator is only on-screen at specific moments). The angle readout updates from raw mouse deltas independently of ROI detection, so the warning fired constantly even when everything was working correctly. Fortnite detection status remains available in the Debug tab where it belongs.
+- **Fix: Bogus "NOT DETECTING ? CHECK ROI" Warning**. Removed the HUD warning added in v5.5.311. It was triggered by `matchPct == 0`, but that match ratio measures the FOV/glide indicator colour inside the ROI ? which is legitimately 0 during most of normal gameplay (the indicator is only on-screen at specific moments). The angle readout updates from raw mouse deltas independently of ROI detection, so the warning fired constantly even when everything was working correctly. Fortnite detection status remains available in the Debug tab where it belongs.
 
 ### BetterAngle Pro v5.5.312
 - **Feature: Stable / Beta Update Channels**. Added a `MIN_STABLE_VERSION` file to the repo. The update checker only notifies users when the latest release has been graduated to stable (i.e. its version >= MIN_STABLE_VERSION). Push test builds freely ? users stay quiet until you bump the file. A "Beta Channel" toggle in the Debug tab bypasses the gate and shows every release including pre-releases immediately, for testers. The active channel (STABLE / BETA) is shown as a badge in the Updates tab. Toggling the channel re-runs the update check instantly.
