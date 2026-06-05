@@ -1,5 +1,5 @@
 ### BetterAngle Pro v5.5.309
-- Automated build release.
+- **Fix: Crosshair and Decimal HUD Visible When Fortnite Not Focused**. The overlay was staying visible whenever the BetterAngle dashboard window was open, even when the user was in Discord, Chrome, or any other app. `IsWindowVisible` returns `true` if a window has `WS_VISIBLE` regardless of whether it is the active foreground window, so `panelVisible` was almost always `true`. Removed `panelVisible` from the overlay visibility condition. The overlay now only shows when Fortnite is the foreground window, when the HUD is being actively dragged (Ctrl+drag), or during ROI/colour selection.
 
 ### BetterAngle Pro v5.5.308
 - **Fix: Decimal Angle HUD Ghost on Cross-Monitor Drag**. Fixed a DWM residual-surface bug where dragging the dashboard to a new monitor left a frozen ghost copy of the decimal angle readout on the old monitor. The root cause was that `g_screenIndex` was updated to the new monitor **before** the layered window's existing surface was cleared, so `SW_HIDE` alone had no old-position record to flush from DWM's compositor. The fix pushes a zero-alpha blank frame via `UpdateLayeredWindow` at the old monitor's coordinates ? while `g_screenIndex` still points there ? before updating the index and moving the HWND. This explicitly tells DWM to clear that surface, eliminating the duplicate.

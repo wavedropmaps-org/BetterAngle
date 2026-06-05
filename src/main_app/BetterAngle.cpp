@@ -914,8 +914,7 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
       // crosshair colors.  IsWindowVisible returns TRUE for minimized
       // windows, so we also check !IsIconic to exclude that case.
       bool fortniteFocused = g_fortniteFocusedCache.load();
-      bool panelVisible = (g_hPanel && IsWindow(g_hPanel) && IsWindowVisible(g_hPanel) && !IsIconic(g_hPanel));
-      bool overlayVisible = fortniteFocused || panelVisible || g_isDraggingHUD ||
+      bool overlayVisible = fortniteFocused || g_isDraggingHUD ||
                             (g_currentSelection != NONE);
 
       // Throttle overlay redraws to ~10fps when Fortnite is not the foreground window.
