@@ -115,9 +115,7 @@ void DrawOverlay(HWND hwnd, double angle, bool showCrosshair, bool overlayVisibl
       memset(s_blankBits, 0, sw * sh * 4);
     HGDIOBJ hOldBlank = SelectObject(s_blankMemDc, s_blankBmp);
     POINT ptSrc0 = {0, 0};
-    RECT wr;
-    GetWindowRect(hwnd, &wr);
-    POINT ptWin0 = {wr.left, wr.top};
+    POINT ptWin0 = {mRect.left, mRect.top};
     SIZE sz0 = {sw, sh};
     BLENDFUNCTION blendBlank = {AC_SRC_OVER, 0, 255, AC_SRC_ALPHA};
     UpdateLayeredWindow(hwnd, hdcScrLocal, &ptWin0, &sz0, s_blankMemDc, &ptSrc0,
@@ -666,9 +664,7 @@ void DrawOverlay(HWND hwnd, double angle, bool showCrosshair, bool overlayVisibl
 
 render_done:
   POINT ptSrc = {0, 0};
-  RECT wRect;
-  GetWindowRect(hwnd, &wRect);
-  POINT ptWin = {wRect.left, wRect.top};
+  POINT ptWin = {mRect.left, mRect.top};
   SIZE size = {sw, sh};
   BLENDFUNCTION blend = {AC_SRC_OVER, 0, 255, AC_SRC_ALPHA};
 
