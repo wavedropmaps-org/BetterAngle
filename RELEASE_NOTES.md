@@ -1,3 +1,6 @@
+### BetterAngle Pro v5.5.307
+- Automated build release.
+
 ### BetterAngle Pro v5.5.306
 - **Fix: Critical Cross-Thread HUD Desync**. Fixed a severe race condition where the Qt QML background thread was trying to directly move the Win32 HUD window (`SetWindowPos` and `ShowWindow`) while the Win32 main thread was simultaneously trying to draw to it at 100fps. This cross-thread interference corrupted Windows DWM, creating the illusion of duplicated "ghost" windows across monitors. The backend now safely uses `PostMessage` to serialize all monitor boundary switches directly onto the Win32 rendering thread.
 
