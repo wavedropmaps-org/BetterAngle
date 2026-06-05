@@ -530,18 +530,6 @@ void DrawOverlay(HWND hwnd, double angle, bool showCrosshair, bool overlayVisibl
     Pen swatchP(Color(100, 220, 220, 220), 1.0f);
     graphics.DrawEllipse(&swatchP, swatchX, swatchY, 16, 16);
 
-    // Detection status warning — only shown when Fortnite is focused and
-    // nothing is being detected so the user knows to check their ROI/colour.
-    if (matchPct == 0 && IsFortniteForeground()) {
-      Font warnFont(&ff, 10, FontStyleBold, UnitPixel);
-      SolidBrush warnBrush(Color(200, 255, 100, 60));
-      StringFormat sfCenter;
-      sfCenter.SetAlignment(StringAlignmentCenter);
-      graphics.DrawString(L"NOT DETECTING — CHECK ROI",  -1, &warnFont,
-                          RectF(float(rx), float(ry + rh - 60), float(rw), 14.0f),
-                          &sfCenter, &warnBrush);
-    }
-
     // Drag hint — context-aware:
     //   In-game (Fortnite focused): remind user to hold Ctrl to unlock drag.
     //   Out-of-game / actively dragging: show standard cue.
