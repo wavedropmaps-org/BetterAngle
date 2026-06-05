@@ -1110,9 +1110,12 @@ void BetterAngleBackend::resetHudPosition() {
 }
 
 void BetterAngleBackend::saveDashboardPosition(int x, int y) {
+  // In-memory only — this fires on every pixel of window movement during a
+  // drag. Writing settings.json here would thrash the disk hundreds of times
+  // per second. The 30s auto-save timer and the on-exit SaveSettings() persist
+  // the final position.
   g_dashX = x;
   g_dashY = y;
-  SaveSettings();
 }
 
 int BetterAngleBackend::savedDashX() const { return g_dashX; }
