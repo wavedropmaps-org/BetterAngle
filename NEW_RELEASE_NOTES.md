@@ -1,2 +1,2 @@
-### BetterAngle Pro v5.5.303
+### BetterAngle Pro v5.5.304
 - **Fix: HUD Duplication on Cross-Monitor Drag**. Fixed a race condition between `SetWindowPos` and `UpdateLayeredWindow` that caused the HUD to randomly ghost or duplicate across both monitors while dragging the dashboard between screens. `UpdateLayeredWindow` now enforces absolute coordinates using `GetMonitorRectByIndex` instead of relying on stale `GetWindowRect` states.

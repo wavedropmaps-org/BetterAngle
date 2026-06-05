@@ -78,6 +78,7 @@ static bool CheckFortniteProcessFast() {
 void DrawOverlay(HWND hwnd, double angle, bool showCrosshair, bool overlayVisible) {
   TickFPS();
 
+  RECT mRect = GetMonitorRectByIndex(g_screenIndex);
   RECT rect;
   GetClientRect(hwnd, &rect);
   int sw = rect.right - rect.left;
@@ -160,11 +161,9 @@ void DrawOverlay(HWND hwnd, double angle, bool showCrosshair, bool overlayVisibl
     HDC hdcSnap = CreateCompatibleDC(hdcMem);
     HGDIOBJ hOldSnap = SelectObject(hdcSnap, g_screenSnapshot);
     
-    // Multi-Monitor Pro Fix: CaptureDesktop gets the entire virtual desktop.
     // To render the correct monitor's slice, offset by mRect - virX/virY.
     int virX = GetSystemMetrics(SM_XVIRTUALSCREEN);
     int virY = GetSystemMetrics(SM_YVIRTUALSCREEN);
-    RECT mRect = GetMonitorRectByIndex(g_screenIndex);
     BitBlt(hdcMem, 0, 0, sw, sh, hdcSnap, mRect.left - virX, mRect.top - virY, SRCCOPY);
     
     SelectObject(hdcSnap, hOldSnap);
@@ -205,9 +204,7 @@ void DrawOverlay(HWND hwnd, double angle, bool showCrosshair, bool overlayVisibl
     SolidBrush whiteBrush(Color(255, 255, 255, 255));
     SolidBrush dimWhite(Color(180, 220, 220, 220));
 
-    // For ROI/Selection drawing, we need to map from Screen to Client
     // Since our window is exactly at mRect.left/top, we subtract those.
-    RECT mRect = GetMonitorRectByIndex(g_screenIndex);
     int ox = mRect.left;
     int oy = mRect.top;
 
