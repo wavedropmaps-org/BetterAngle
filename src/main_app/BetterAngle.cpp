@@ -880,21 +880,20 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
           InvalidateRect(hWnd, NULL, FALSE);
         }
 
-        // Adjust click-through based on Fortnite focus.
-        // When Ctrl is held in-game, temporarily allow mouse events on the
-        // overlay so the user can click-and-drag the HUD to reposition it.
-        // As soon as Ctrl is released (or the drag ends), restore transparency.
+        // Click-through logic: only remove WS_EX_TRANSPARENT when we actually
+        // need mouse events. In every other case (including when Fortnite is not
+        // focused) keep the overlay click-through so it can't intercept input
+        // from other apps and accidentally steal keyboard focus.
+        bool needMouseEvents = g_isDraggingHUD ||
+                               (g_currentSelection != NONE) ||
+                               (fnFocused && ctrlDown);
         long ex = GetWindowLong(hWnd, GWL_EXSTYLE);
-        if (fnFocused && !ctrlDown && !g_isDraggingHUD) {
-          // Normal gameplay: HUD is click-through, passes all input to Fortnite.
-          if (!(ex & WS_EX_TRANSPARENT)) {
-            SetWindowLong(hWnd, GWL_EXSTYLE, ex | WS_EX_TRANSPARENT);
-          }
-        } else if (!fnFocused || ctrlDown || g_isDraggingHUD) {
-          // Drag mode (out-of-game) OR Ctrl held in-game: receive mouse events.
-          if (ex & WS_EX_TRANSPARENT) {
+        if (needMouseEvents) {
+          if (ex & WS_EX_TRANSPARENT)
             SetWindowLong(hWnd, GWL_EXSTYLE, ex & ~WS_EX_TRANSPARENT);
-          }
+        } else {
+          if (!(ex & WS_EX_TRANSPARENT))
+            SetWindowLong(hWnd, GWL_EXSTYLE, ex | WS_EX_TRANSPARENT);
         }
       }
 
@@ -1215,7 +1214,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
   int screenX = mRect.left;
   int screenY = mRect.top;
 
-  DWORD exStyle = WS_EX_LAYERED | WS_EX_TRANSPARENT;
+  // WS_EX_NOACTIVATE: overlay must never steal keyboard focus, even when
+  // WS_EX_TRANSPARENT is temporarily removed for HUD dragging/ROI selection.
+  DWORD exStyle = WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE;
   if (!g_diagNoTopmost.load()) {
     exStyle |= WS_EX_TOPMOST;
   }
