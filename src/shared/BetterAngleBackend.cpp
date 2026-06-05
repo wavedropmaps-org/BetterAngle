@@ -1201,6 +1201,20 @@ void BetterAngleBackend::setDiagNoTimer(bool v) {
   }
 }
 
+bool BetterAngleBackend::betaUpdates() const { return g_betaUpdates.load(); }
+void BetterAngleBackend::setBetaUpdates(bool v) {
+  if (g_betaUpdates.load() != v) {
+    g_betaUpdates.store(v);
+    SaveSettings();
+    // Reset update state so the check runs fresh on the new channel.
+    g_hasCheckedForUpdates = false;
+    g_updateAvailable = false;
+    emit updateStatusChanged();
+    emit debugDataChanged();
+    checkForUpdates();
+  }
+}
+
 void BetterAngleBackend::refreshDebugData() { emit debugDataChanged(); }
 
 long long BetterAngleBackend::detectionDelayMs() const {

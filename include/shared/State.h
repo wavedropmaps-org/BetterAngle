@@ -50,6 +50,7 @@ extern std::atomic<ULONGLONG> g_lastLockTime;
 extern std::atomic<bool> g_diagNoRawInput;
 extern std::atomic<bool> g_diagNoTopmost;
 extern std::atomic<bool> g_diagNoTimer;
+extern std::atomic<bool> g_betaUpdates;
 
 extern std::string g_lastVersionRun;
 

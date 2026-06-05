@@ -9,12 +9,53 @@
 
 #pragma comment(lib, "wininet.lib")
 
-// Placeholders for actual URLs — user should replace these in GitHub Actions or
-// similar if needed GitHub API for latest release info
 const wchar_t *VERSION_URL =
     L"https://api.github.com/repos/wavedropmaps-org/BetterAngle/releases/latest";
+// Beta: /releases list sorted newest-first, includes pre-releases
+const wchar_t *RELEASES_LIST_URL =
+    L"https://api.github.com/repos/wavedropmaps-org/BetterAngle/releases?per_page=1";
+const wchar_t *MIN_STABLE_URL =
+    L"https://raw.githubusercontent.com/wavedropmaps-org/BetterAngle/main/MIN_STABLE_VERSION";
 const wchar_t *DOWNLOAD_URL = L"https://github.com/wavedropmaps-org/BetterAngle/"
                               L"releases/latest/download/BetterAngle_Setup.exe";
+
+// Fetch a small text body into a std::string (no temp file needed).
+static std::string FetchString(const wchar_t *url) {
+  HINTERNET hNet = InternetOpenW(L"BetterAngle/" VERSION_WSTR,
+                                 INTERNET_OPEN_TYPE_DIRECT, NULL, NULL, 0);
+  if (!hNet) return {};
+  const wchar_t *hdrs = L"Accept: application/vnd.github.v3+json\r\n"
+                        L"User-Agent: BetterAngle/" VERSION_WSTR L"\r\n";
+  HINTERNET hUrl = InternetOpenUrlW(hNet, url, hdrs, (DWORD)-1,
+                                    INTERNET_FLAG_RELOAD | INTERNET_FLAG_SECURE, 0);
+  std::string out;
+  if (hUrl) {
+    char buf[8192]; DWORD n;
+    while (InternetReadFile(hUrl, buf, sizeof(buf), &n) && n > 0)
+      out.append(buf, n);
+    InternetCloseHandle(hUrl);
+  }
+  InternetCloseHandle(hNet);
+  return out;
+}
+
+// Returns >0 if a>b, 0 if equal, <0 if a<b.  Strips leading 'v' and
+// pre-release suffixes like -beta before comparing as major.minor.patch.
+static int CompareVersions(const std::string &a, const std::string &b) {
+  auto clean = [](std::string s) {
+    if (!s.empty() && (s[0]=='v' || s[0]=='V')) s = s.substr(1);
+    auto d = s.find('-'); if (d != std::string::npos) s = s.substr(0, d);
+    return s;
+  };
+  std::string sa = clean(a), sb = clean(b);
+  int am=0,an=0,ap=0,bm=0,bn=0,bp=0;
+  sscanf_s(sa.c_str(), "%d.%d.%d", &am, &an, &ap);
+  sscanf_s(sb.c_str(), "%d.%d.%d", &bm, &bn, &bp);
+  if (am != bm) return am > bm ? 1 : -1;
+  if (an != bn) return an > bn ? 1 : -1;
+  if (ap != bp) return ap > bp ? 1 : -1;
+  return 0;
+}
 
 bool DownloadFile(const std::wstring &url, const std::wstring &dest) {
   HINTERNET hInternet =
@@ -78,85 +119,97 @@ static std::wstring EscapePowerShellSingleQuoted(const std::wstring &value) {
   return escaped;
 }
 
-bool CheckForUpdates() {
-  struct UpdateCheckGuard {
-    ~UpdateCheckGuard() {
-      g_isCheckingForUpdates = false;
-      NotifyBackendUpdateStatusChanged();
+// Pull tag_name + browser_download_url for BetterAngle_Setup.exe from a
+// GitHub releases JSON body (works for both /latest and /releases?per_page=1).
+static bool ParseReleasesJson(const std::string &json,
+                               std::string &outTag,
+                               std::wstring &outDownloadUrl) {
+  size_t tagPos = json.find("\"tag_name\"");
+  if (tagPos == std::string::npos) return false;
+  size_t col = json.find(":", tagPos + 10);
+  if (col == std::string::npos) return false;
+  size_t s = json.find("\"", col + 1);
+  size_t e = (s != std::string::npos) ? json.find("\"", s + 1) : std::string::npos;
+  if (s == std::string::npos || e == std::string::npos) return false;
+  outTag = json.substr(s + 1, e - s - 1);
+
+  size_t aPos = json.find("\"browser_download_url\":");
+  while (aPos != std::string::npos) {
+    size_t uS = json.find("\"", aPos + 23);
+    size_t uE = (uS != std::string::npos) ? json.find("\"", uS + 1) : std::string::npos;
+    if (uS != std::string::npos && uE != std::string::npos) {
+      std::string u = json.substr(uS + 1, uE - uS - 1);
+      if (u.find("BetterAngle_Setup.exe") != std::string::npos) {
+        outDownloadUrl = std::wstring(u.begin(), u.end());
+        break;
+      }
     }
+    aPos = json.find("\"browser_download_url\":", aPos + 23);
+  }
+  return true;
+}
+
+bool CheckForUpdates() {
+  struct Guard {
+    ~Guard() { g_isCheckingForUpdates = false; NotifyBackendUpdateStatusChanged(); }
   } guard;
 
   g_isCheckingForUpdates = true;
-  bool success = false;
-  // ... rest of logic
+  bool beta = g_betaUpdates.load();
 
-  std::wstring tempRes = GetAppRootPath() + L"latest_release.json";
-  if (DownloadFile(VERSION_URL, tempRes)) {
-    std::ifstream ifs(tempRes);
-    if (ifs.is_open()) {
-      std::string json((std::istreambuf_iterator<char>(ifs)),
-                       std::istreambuf_iterator<char>());
-      ifs.close();
+  // Fetch release info — beta uses the full list (includes pre-releases),
+  // stable uses /latest (pre-releases are invisible to that endpoint).
+  const wchar_t *endpoint = beta ? RELEASES_LIST_URL : VERSION_URL;
+  std::string json = FetchString(endpoint);
+  if (json.empty()) {
+    g_hasCheckedForUpdates = true;
+    g_updateHistory = "Update check failed. Check your internet connection.";
+    return false;
+  }
 
-        // Search for "tag_name": "vX.Y.Z" - Handle varying spacing
-        size_t tagPos = json.find("\"tag_name\"");
-        if (tagPos != std::string::npos) {
-          size_t colonPos = json.find(":", tagPos + 10);
-          if (colonPos != std::string::npos) {
-            size_t start = json.find("\"", colonPos + 1);
-            size_t end = (start != std::string::npos) ? json.find("\"", start + 1)
-                                                      : std::string::npos;
+  std::string latestTag;
+  std::wstring dlUrl;
+  if (!ParseReleasesJson(json, latestTag, dlUrl)) {
+    g_hasCheckedForUpdates = true;
+    g_updateHistory = "Update check failed — could not parse release info.";
+    return false;
+  }
 
-            if (start != std::string::npos && end != std::string::npos) {
-              std::string latestVerStr = json.substr(start + 1, end - start - 1);
-              g_latestVersionOnline = latestVerStr;
-              success = true;
+  g_latestVersionOnline = latestTag;
+  if (!dlUrl.empty()) g_dynamicDownloadUrl = dlUrl;
 
-              // Search for "browser_download_url": "..."
-              size_t assetPos = json.find("\"browser_download_url\":");
-              while (assetPos != std::string::npos) {
-                size_t uS = json.find("\"", assetPos + 23);
-                size_t uE = (uS != std::string::npos) ? json.find("\"", uS + 1)
-                                                      : std::string::npos;
-                if (uS != std::string::npos && uE != std::string::npos) {
-                  std::string uStr = json.substr(uS + 1, uE - uS - 1);
-                  if (uStr.find("BetterAngle_Setup.exe") != std::string::npos) {
-                    g_dynamicDownloadUrl = std::wstring(uStr.begin(), uStr.end());
-                    break;
-                  }
-                }
-                assetPos = json.find("\"browser_download_url\":", assetPos + 23);
-              }
+  std::string currentVer = VERSION_STR;
 
-              // Version normalization
-              std::string normLatest = latestVerStr;
-              if (!normLatest.empty() && (normLatest[0] == 'v' || normLatest[0] == 'V'))
-                normLatest = normLatest.substr(1);
+  // MIN_STABLE_VERSION gate (stable channel only).
+  // Only notify if the latest full release has been graduated to stable.
+  if (!beta) {
+    std::string minStableRaw = FetchString(MIN_STABLE_URL);
+    // Trim whitespace
+    while (!minStableRaw.empty() &&
+           (minStableRaw.back() == '\n' || minStableRaw.back() == '\r' ||
+            minStableRaw.back() == ' '))
+      minStableRaw.pop_back();
 
-              std::string currentVer = VERSION_STR;
-              if (!currentVer.empty() && (currentVer[0] == 'v' || currentVer[0] == 'V'))
-                currentVer = currentVer.substr(1);
-
-              if (!normLatest.empty() && normLatest != currentVer) {
-                g_updateAvailable = true;
-                g_updateHistory = "New version available: v" + normLatest;
-              } else {
-                g_updateAvailable = false;
-                g_updateHistory = "Software is up to date (v" + currentVer + ")";
-              }
-            }
-          }
-        }
+    if (!minStableRaw.empty() && CompareVersions(latestTag, minStableRaw) < 0) {
+      // Latest release hasn't been graduated yet — stay quiet.
+      g_updateAvailable = false;
+      g_updateHistory = "You're up to date (stable channel).";
+      g_hasCheckedForUpdates = true;
+      return false;
     }
-    DeleteFileW(tempRes.c_str());
   }
 
-  g_hasCheckedForUpdates = true; // Always true after attempt, even if failed
-  if (!success) {
-    g_updateHistory =
-        "Update check failed. Verify the latest GitHub release is a normal "
-        "release, not a prerelease.";
+  if (CompareVersions(latestTag, currentVer) > 0) {
+    g_updateAvailable = true;
+    g_updateHistory = "New version available: " + latestTag +
+                      (beta ? " [beta channel]" : "");
+  } else {
+    g_updateAvailable = false;
+    g_updateHistory = std::string("Up to date (v") + currentVer + ")" +
+                      (beta ? " [beta channel]" : "");
   }
+
+  g_hasCheckedForUpdates = true;
   return g_updateAvailable;
 }
 

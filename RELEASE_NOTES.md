@@ -1,5 +1,5 @@
 ### BetterAngle Pro v5.5.312
-- Automated build release.
+- **Feature: Stable / Beta Update Channels**. Added a `MIN_STABLE_VERSION` file to the repo. The update checker only notifies users when the latest release has been graduated to stable (i.e. its version >= MIN_STABLE_VERSION). Push test builds freely — users stay quiet until you bump the file. A "Beta Channel" toggle in the Debug tab bypasses the gate and shows every release including pre-releases immediately, for testers. The active channel (STABLE / BETA) is shown as a badge in the Updates tab. Toggling the channel re-runs the update check instantly.
 
 ### BetterAngle Pro v5.5.311
 - **QoL: Startup Monitor Auto-Detection**. If Fortnite is already running when BetterAngle launches, the HUD now snaps to Fortnite's monitor immediately instead of defaulting to monitor 0.

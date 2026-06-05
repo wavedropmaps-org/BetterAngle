@@ -32,6 +32,7 @@ std::atomic<ULONGLONG> g_lastLockTime(0);
 std::atomic<bool> g_diagNoRawInput(false);
 std::atomic<bool> g_diagNoTopmost(false);
 std::atomic<bool> g_diagNoTimer(false);
+std::atomic<bool> g_betaUpdates(false);
 
 std::atomic<int> g_peakMatchCount{0};
 std::atomic<int> g_requiredMatchCount{0};
@@ -141,6 +142,7 @@ void LoadSettings() {
     g_diagNoRawInput = eFloat("diagNoRawInput", 0.0f) > 0.5f;
     g_diagNoTopmost = eFloat("diagNoTopmost", 0.0f) > 0.5f;
     g_diagNoTimer = eFloat("diagNoTimer", 0.0f) > 0.5f;
+    g_betaUpdates = eFloat("betaUpdates", 0.0f) > 0.5f;
 
     size_t vp = content.find("\"lastVersionRun\":\"");
     if (vp != std::string::npos) {
@@ -193,6 +195,10 @@ void SaveSettings() {
   oss << "  \"selectedProfileIdx\": " << g_selectedProfileIdx << ",\n";
   oss << "  \"screenIndex\": " << g_screenIndex << ",\n";
 
+  oss << "  \"diagNoRawInput\": " << (g_diagNoRawInput ? 1 : 0) << ",\n";
+  oss << "  \"diagNoTopmost\": " << (g_diagNoTopmost ? 1 : 0) << ",\n";
+  oss << "  \"diagNoTimer\": " << (g_diagNoTimer ? 1 : 0) << ",\n";
+  oss << "  \"betaUpdates\": " << (g_betaUpdates ? 1 : 0) << ",\n";
   oss << "  \"lastVersionRun\":\"" << VERSION_STR << "\",\n";
 
   std::string lp;

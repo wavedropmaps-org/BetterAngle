@@ -1037,9 +1037,26 @@ Item {
                 anchors.margins: 20
                 spacing: 15
 
-                Text { text: "Version: " + backend.versionStr; color: "white"; font.pixelSize: 16 }
-                
-                Text { 
+                Row {
+                    spacing: 10
+                    Text { text: "Version: " + backend.versionStr; color: "white"; font.pixelSize: 16; verticalAlignment: Text.AlignVCenter }
+                    Rectangle {
+                        width: channelLabel.width + 12; height: 20; radius: 4
+                        color: backend.betaUpdates ? "#332200" : "#001a0d"
+                        border.color: backend.betaUpdates ? "#ccaa00" : "#00aa44"
+                        border.width: 1
+                        anchors.verticalCenter: parent.verticalCenter
+                        Text {
+                            id: channelLabel
+                            anchors.centerIn: parent
+                            text: backend.betaUpdates ? "BETA" : "STABLE"
+                            color: backend.betaUpdates ? "#ffdd44" : "#00ff88"
+                            font.bold: true; font.pixelSize: 10
+                        }
+                    }
+                }
+
+                Text {
                     text: "Latest: " + backend.latestVersion
                     color: "#aaa"
                     visible: backend.latestVersion !== ""
@@ -1497,6 +1514,39 @@ Item {
                     Text {
                         text: "⚠ Restart BetterAngle after toggling for full effect. Test in Fortnite while gliding."
                         color: "#ff8844"; font.pixelSize: 10; font.bold: true; width: parent.width; wrapMode: Text.WordWrap
+                    }
+
+                    // ── Beta / Stable Update Channel ──────────────────────
+                    Rectangle {
+                        width: parent.width; height: betaCol.implicitHeight + 16; radius: 6
+                        color: backend.betaUpdates ? "#1a1a00" : "#101a10"
+                        border.color: backend.betaUpdates ? "#ccaa00" : "#224422"
+                        border.width: 1
+
+                        Column {
+                            id: betaCol
+                            anchors { left: parent.left; right: parent.right; top: parent.top; margins: 10 }
+                            spacing: 4
+
+                            RowLayout {
+                                width: parent.width
+                                Switch {
+                                    checked: backend.betaUpdates
+                                    onCheckedChanged: backend.betaUpdates = checked
+                                }
+                                Text {
+                                    text: backend.betaUpdates ? "Update Channel: BETA" : "Update Channel: Stable"
+                                    color: backend.betaUpdates ? "#ffdd44" : "#66ff88"
+                                    font.bold: true; font.pixelSize: 12
+                                }
+                            }
+                            Text {
+                                text: backend.betaUpdates
+                                    ? "Shows all releases including pre-releases. You may get unstable builds."
+                                    : "Only shows releases graduated to stable via MIN_STABLE_VERSION."
+                                color: "#777"; font.pixelSize: 9; width: parent.width; wrapMode: Text.WordWrap
+                            }
+                        }
                     }
                 }
             }

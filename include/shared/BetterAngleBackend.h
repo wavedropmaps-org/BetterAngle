@@ -78,6 +78,7 @@ class BetterAngleBackend : public QObject {
   Q_PROPERTY(bool diagNoRawInput READ diagNoRawInput WRITE setDiagNoRawInput NOTIFY debugDataChanged)
   Q_PROPERTY(bool diagNoTopmost READ diagNoTopmost WRITE setDiagNoTopmost NOTIFY debugDataChanged)
   Q_PROPERTY(bool diagNoTimer READ diagNoTimer WRITE setDiagNoTimer NOTIFY debugDataChanged)
+  Q_PROPERTY(bool betaUpdates READ betaUpdates WRITE setBetaUpdates NOTIFY debugDataChanged)
 
   // Saved dashboard window position (restored on startup)
   Q_PROPERTY(int savedDashX READ savedDashX CONSTANT)
@@ -179,6 +180,8 @@ public:
   void setDiagNoTopmost(bool v);
   bool diagNoTimer() const;
   void setDiagNoTimer(bool v);
+  bool betaUpdates() const;
+  void setBetaUpdates(bool v);
 
   Q_INVOKABLE void terminateApp();
   Q_INVOKABLE void checkForUpdates();
