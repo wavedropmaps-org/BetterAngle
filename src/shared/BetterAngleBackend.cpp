@@ -486,11 +486,16 @@ void BetterAngleBackend::syncHudToWindow(int x, int y, int w, int h) {
     
     // Resize and move the HUD window to the new monitor
     if (g_hHUD) {
+      // Force DWM to drop the surface on the old monitor so it doesn't leave a ghost
+      ShowWindow(g_hHUD, SW_HIDE);
+
       RECT mRect = GetMonitorRectByIndex(g_screenIndex);
       int screenW = mRect.right - mRect.left;
       int screenH = mRect.bottom - mRect.top;
       SetWindowPos(g_hHUD, HWND_TOPMOST, mRect.left, mRect.top, screenW, screenH,
-                   SWP_NOACTIVATE | SWP_SHOWWINDOW);
+                   SWP_NOACTIVATE);
+
+      ShowWindow(g_hHUD, SW_SHOWNOACTIVATE);
       g_forceRedraw = true;
     }
   }

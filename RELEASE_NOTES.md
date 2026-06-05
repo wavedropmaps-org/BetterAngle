@@ -1,5 +1,5 @@
 ### BetterAngle Pro v5.5.305
-- Automated build release.
+- **Fix: HUD Ghosting on Old Monitor**. Fixed a known Windows Desktop Window Manager (DWM) bug where moving a hardware-accelerated Layered Window across monitor boundaries would leave a frozen ghost artifact on the old monitor while drawing live on the new monitor. The backend now forces a DWM surface purge (`SW_HIDE` -> `SW_SHOWNOACTIVATE`) when crossing monitors to guarantee the old screen is cleared.
 
 ### BetterAngle Pro v5.5.304
 - **Fix: HUD Duplication on Cross-Monitor Drag**. Fixed a compile error in the cross-monitor sync logic where the monitor rectangle was undeclared. This ensures the HUD sync correctly tracks absolute monitor coordinates during drags.
