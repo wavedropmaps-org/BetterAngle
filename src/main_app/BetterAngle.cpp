@@ -944,9 +944,15 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
   case WM_USER + 101: {
     int newScreenIndex = (int)wParam;
     if (newScreenIndex != g_screenIndex) {
+      // Blank the layered surface at the OLD monitor position first.
+      // UpdateLayeredWindow has already committed pixels there; SW_HIDE alone
+      // doesn't flush the DWM surface in time, leaving a ghost copy behind.
+      // Pushing a zero-alpha frame while g_screenIndex still points to the old
+      // monitor tells DWM to clear that surface before we move the HWND.
+      DrawOverlay(hWnd, 0.0, false, false);
+
       g_screenIndex = newScreenIndex;
-      
-      // Force DWM to drop the surface on the old monitor so it doesn't leave a ghost
+
       ShowWindow(hWnd, SW_HIDE);
 
       RECT mRect = GetMonitorRectByIndex(g_screenIndex);

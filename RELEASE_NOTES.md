@@ -1,5 +1,5 @@
 ### BetterAngle Pro v5.5.308
-- Automated build release.
+- **Fix: Decimal Angle HUD Ghost on Cross-Monitor Drag**. Fixed a DWM residual-surface bug where dragging the dashboard to a new monitor left a frozen ghost copy of the decimal angle readout on the old monitor. The root cause was that `g_screenIndex` was updated to the new monitor **before** the layered window's existing surface was cleared, so `SW_HIDE` alone had no old-position record to flush from DWM's compositor. The fix pushes a zero-alpha blank frame via `UpdateLayeredWindow` at the old monitor's coordinates — while `g_screenIndex` still points there — before updating the index and moving the HWND. This explicitly tells DWM to clear that surface, eliminating the duplicate.
 
 ### BetterAngle Pro v5.5.307
 - **Fix: Critical Cross-Thread HUD Desync**. Fixed a severe race condition where the Qt QML background thread was trying to directly move the Win32 HUD window (`SetWindowPos` and `ShowWindow`) while the Win32 main thread was simultaneously trying to draw to it at 100fps. This cross-thread interference corrupted Windows DWM, creating the illusion of duplicated "ghost" windows across monitors. The backend now safely uses `PostMessage` to serialize all monitor boundary switches directly onto the Win32 rendering thread.
