@@ -875,15 +875,7 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
           g_hudX = newX;
           g_hudY = newY;
 
-          // Move the control panel along with the HUD
-          if (g_hPanel && IsWindow(g_hPanel)) {
-            RECT panelRect;
-            GetWindowRect(g_hPanel, &panelRect);
-            SetWindowPos(g_hPanel, NULL,
-                        panelRect.left + deltaX,
-                        panelRect.top + deltaY,
-                        0, 0, SWP_NOSIZE | SWP_NOZORDER);
-          }
+          // The dashboard is no longer dragged locally along with the HUD.
 
           InvalidateRect(hWnd, NULL, FALSE);
         }
