@@ -4,6 +4,7 @@
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
+#include <QWindow>
 
 QQmlApplicationEngine *g_qmlEngine = nullptr;
 BetterAngleBackend *g_backend = nullptr;
@@ -44,7 +45,19 @@ HWND CreateControlPanel(HINSTANCE hInstance) {
              << g_qmlEngine->rootObjects().size();
   }
 
-  return (HWND)1;
+  // Extract the real native HWND from the Qt root window so that
+  // IsWindow() / IsWindowVisible() checks against g_hPanel work
+  // correctly.  The old sentinel value (HWND)1 always failed
+  // IsWindow(), which broke overlay visibility on Alt-Tab.
+  if (!g_qmlEngine->rootObjects().isEmpty()) {
+    QObject *root = g_qmlEngine->rootObjects().first();
+    QWindow *window = qobject_cast<QWindow *>(root);
+    if (window) {
+      return (HWND)window->winId();
+    }
+  }
+
+  return NULL;
 }
 
 
@@ -53,4 +66,4 @@ void ShowControlPanel() {
   if (g_backend) {
     g_backend->requestShowControlPanel();
   }
-}
+}

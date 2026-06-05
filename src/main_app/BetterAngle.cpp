@@ -655,8 +655,9 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
                     GetWindowLong(hWnd, GWL_EXSTYLE) | WS_EX_TRANSPARENT);
       InvalidateRect(hWnd, NULL, FALSE);
       g_forceRedraw = true;
+      return 0; // Only consume the key when we actually handled it
     }
-    return 0;
+    break; // Pass all other keys through to DefWindowProc
   case WM_LBUTTONDOWN:
     if (g_currentSelection == SELECTING_ROI) {
       POINT cur;
@@ -846,7 +847,10 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
         POINT pt;
         GetCursorPos(&pt);
 
-        bool fnFocused = IsFortniteForeground();
+        // Use the event-hook cache consistently (same source as overlay
+        // visibility at line 918) to prevent the WS_EX_TRANSPARENT flag
+        // from racing against the overlay's suspend/show decision.
+        bool fnFocused = g_fortniteFocusedCache.load();
         // Dragging the HUD requires holding Ctrl to prevent accidental drags
         bool canDrag = ctrlDown;
 

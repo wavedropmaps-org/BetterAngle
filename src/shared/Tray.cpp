@@ -44,10 +44,26 @@ void ShowTrayContextMenu(HWND hwnd) {
     
     POINT pt;
     GetCursorPos(&pt);
-    
+
+    // The HUD window is WS_EX_TRANSPARENT (click-through overlay).
+    // SetForegroundWindow fails silently on transparent windows, which causes
+    // TrackPopupMenu to dismiss immediately.  Temporarily strip the flag so
+    // the popup menu actually appears and can be clicked.
+    LONG exStyle = GetWindowLong(hwnd, GWL_EXSTYLE);
+    bool wasTransparent = (exStyle & WS_EX_TRANSPARENT) != 0;
+    if (wasTransparent) {
+        SetWindowLong(hwnd, GWL_EXSTYLE, exStyle & ~WS_EX_TRANSPARENT);
+    }
+
     SetForegroundWindow(hwnd);
     int cmd = TrackPopupMenu(hMenu, TPM_RETURNCMD | TPM_NONOTIFY | TPM_BOTTOMALIGN | TPM_LEFTALIGN, pt.x, pt.y, 0, hwnd, NULL);
     
+    // Restore click-through if it was set before
+    if (wasTransparent) {
+        LONG current = GetWindowLong(hwnd, GWL_EXSTYLE);
+        SetWindowLong(hwnd, GWL_EXSTYLE, current | WS_EX_TRANSPARENT);
+    }
+
     // Post benign message to the window to ensure menu closes properly if user clicks away
     // (This is a documented Windows bug workaround)
     PostMessage(hwnd, WM_NULL, 0, 0);
