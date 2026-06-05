@@ -1,3 +1,6 @@
+### BetterAngle Pro v5.5.305
+- Automated build release.
+
 ### BetterAngle Pro v5.5.304
 - **Fix: HUD Duplication on Cross-Monitor Drag**. Fixed a compile error in the cross-monitor sync logic where the monitor rectangle was undeclared. This ensures the HUD sync correctly tracks absolute monitor coordinates during drags.
 
