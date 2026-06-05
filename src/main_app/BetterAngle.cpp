@@ -917,10 +917,12 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
       g_forceRedraw.store(false);
 
       // Suspend the overlay (HUD + crosshair) when Fortnite is not the
-      // foreground window. The dashboard panel being open also keeps it
-      // visible so the user can reposition the HUD or pick crosshair colors.
+      // foreground window. The dashboard panel being open (not minimized)
+      // also keeps it visible so the user can reposition the HUD or pick
+      // crosshair colors.  IsWindowVisible returns TRUE for minimized
+      // windows, so we also check !IsIconic to exclude that case.
       bool fortniteFocused = g_fortniteFocusedCache.load();
-      bool panelVisible = (g_hPanel && IsWindow(g_hPanel) && IsWindowVisible(g_hPanel));
+      bool panelVisible = (g_hPanel && IsWindow(g_hPanel) && IsWindowVisible(g_hPanel) && !IsIconic(g_hPanel));
       bool overlayVisible = fortniteFocused || panelVisible || g_isDraggingHUD ||
                             (g_currentSelection != NONE);
 

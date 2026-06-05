@@ -6,6 +6,7 @@
 - **Fix: Overlay Vanishes on Alt-Tab**. The dashboard panel handle (`g_hPanel`) was set to a dummy sentinel value `(HWND)1` which always failed `IsWindow()`. This caused the overlay visibility check to think the dashboard was never open, hiding the HUD and crosshair whenever Fortnite lost focus. Now extracts the real native HWND from the Qt window.
 - **Fix: Overlay Not Restoring on Tab-Back**. The WM_TIMER handler used a live `IsFortniteForeground()` call for the click-through toggle but the overlay visibility used the event-hook cache `g_fortniteFocusedCache`. These could disagree during focus transitions, causing `WS_EX_TRANSPARENT` to flip-flop and create a brief focus loop. Now uses the event-hook cache consistently.
 - **Fix: System Tray Menu Not Clickable**. The tray context menu's `SetForegroundWindow` was failing silently because the HUD window has `WS_EX_TRANSPARENT`. Now temporarily strips the click-through flag before showing the popup menu.
+- **Fix: Overlay Showing When Dashboard Minimized**. The overlay visibility check now excludes minimized (iconic) windows. `IsWindowVisible` returns TRUE for minimized windows, so the overlay would stay on-screen even when the dashboard was in the taskbar and Fortnite wasn't focused.
 
 ### BetterAngle Pro v5.5.297
 - Automated build release.
