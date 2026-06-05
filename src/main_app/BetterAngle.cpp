@@ -941,6 +941,26 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
     return 0;
   }
 
+  case WM_USER + 100: {
+    int newScreenIndex = (int)wParam;
+    if (newScreenIndex != g_screenIndex) {
+      g_screenIndex = newScreenIndex;
+      
+      // Force DWM to drop the surface on the old monitor so it doesn't leave a ghost
+      ShowWindow(hWnd, SW_HIDE);
+
+      RECT mRect = GetMonitorRectByIndex(g_screenIndex);
+      int screenW = mRect.right - mRect.left;
+      int screenH = mRect.bottom - mRect.top;
+      SetWindowPos(hWnd, HWND_TOPMOST, mRect.left, mRect.top, screenW, screenH,
+                   SWP_NOACTIVATE);
+
+      ShowWindow(hWnd, SW_SHOWNOACTIVATE);
+      g_forceRedraw = true;
+    }
+    return 0;
+  }
+
   // Multi-Monitor Hot-Plug Detection (ported from v5.5.153)
   // When a monitor is plugged in or unplugged, Windows sends WM_DISPLAYCHANGE.
   // We auto-track Fortnite's monitor and resize the overlay to match.

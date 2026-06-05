@@ -482,21 +482,10 @@ void BetterAngleBackend::syncHudToWindow(int x, int y, int w, int h) {
     reinterpret_cast<LPARAM>(&data));
 
   if (data.foundIndex >= 0 && data.foundIndex != g_screenIndex) {
-    g_screenIndex = data.foundIndex;
-    
-    // Resize and move the HUD window to the new monitor
     if (g_hHUD) {
-      // Force DWM to drop the surface on the old monitor so it doesn't leave a ghost
-      ShowWindow(g_hHUD, SW_HIDE);
-
-      RECT mRect = GetMonitorRectByIndex(g_screenIndex);
-      int screenW = mRect.right - mRect.left;
-      int screenH = mRect.bottom - mRect.top;
-      SetWindowPos(g_hHUD, HWND_TOPMOST, mRect.left, mRect.top, screenW, screenH,
-                   SWP_NOACTIVATE);
-
-      ShowWindow(g_hHUD, SW_SHOWNOACTIVATE);
-      g_forceRedraw = true;
+      // Must post message to Win32 thread! Calling SetWindowPos from the Qt background thread
+      // causes severe DWM desyncs and ghost windows.
+      PostMessageW(g_hHUD, WM_USER + 100, data.foundIndex, 0);
     }
   }
 }
