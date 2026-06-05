@@ -1,5 +1,5 @@
 ### BetterAngle Pro v5.5.301
-- Automated build release.
+- **Feature: Unlinked Local Dragging**. The HUD and dashboard windows can now be dragged independently on the same screen (Ctrl+Drag the HUD, or drag the dashboard normally). They will only follow each other if the dashboard is moved to a completely different monitor, keeping them bundled per-screen but separate locally.
 
 ### BetterAngle Pro v5.5.300
 - **Fix: ESC Key Opens File Explorer / Switches Tabs**. The HUD overlay's `WM_KEYDOWN` handler was swallowing ALL keypresses (returning 0 unconditionally), not just ESC during ROI selection. When the overlay wasn't click-through (e.g. while tabbed out of Fortnite), this caused Windows to misinterpret missing key events as shell hotkey ghosts ? opening File Explorer or triggering Alt+Tab.

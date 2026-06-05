@@ -464,23 +464,35 @@ void BetterAngleBackend::requestShowControlPanel() {
 static int s_lastWinX = INT_MIN;
 static int s_lastWinY = INT_MIN;
 
-void BetterAngleBackend::syncHudToWindow(int x, int y, int /*w*/, int /*h*/) {
-  if (s_lastWinX == INT_MIN) {
-    // First call — record baseline, don't move the HUD.
-    s_lastWinX = x;
-    s_lastWinY = y;
-    return;
-  }
+void BetterAngleBackend::syncHudToWindow(int x, int y, int w, int h) {
+  // Only sync the HUD if the dashboard crosses onto a DIFFERENT monitor.
+  // We no longer link their local movement per user request.
+  RECT qtRect = {x, y, x + w, y + h};
+  HMONITOR hQtMon = MonitorFromRect(&qtRect, MONITOR_DEFAULTTONEAREST);
 
-  int dx = x - s_lastWinX;
-  int dy = y - s_lastWinY;
+  struct FindData { HMONITOR target; int currentIndex; int foundIndex; };
+  FindData data = {hQtMon, 0, -1};
+  EnumDisplayMonitors(NULL, NULL,
+    [](HMONITOR h, HDC, LPRECT, LPARAM dwData) -> BOOL {
+      auto *d = reinterpret_cast<FindData *>(dwData);
+      if (h == d->target) { d->foundIndex = d->currentIndex; return FALSE; }
+      d->currentIndex++;
+      return TRUE;
+    },
+    reinterpret_cast<LPARAM>(&data));
 
-  if (dx != 0 || dy != 0) {
-    g_hudX += dx;
-    g_hudY += dy;
-    s_lastWinX = x;
-    s_lastWinY = y;
-    g_forceRedraw = true;
+  if (data.foundIndex >= 0 && data.foundIndex != g_screenIndex) {
+    g_screenIndex = data.foundIndex;
+    
+    // Resize and move the HUD window to the new monitor
+    if (g_hHUD) {
+      RECT mRect = GetMonitorRectByIndex(g_screenIndex);
+      int screenW = mRect.right - mRect.left;
+      int screenH = mRect.bottom - mRect.top;
+      SetWindowPos(g_hHUD, HWND_TOPMOST, mRect.left, mRect.top, screenW, screenH,
+                   SWP_NOACTIVATE | SWP_SHOWWINDOW);
+      g_forceRedraw = true;
+    }
   }
 }
 
