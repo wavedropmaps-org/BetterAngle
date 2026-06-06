@@ -218,9 +218,10 @@ void UpdateApp() {
     return;
 
   g_isDownloadingUpdate = true;
-  std::thread([]() {
+  std::wstring downloadUrl = g_dynamicDownloadUrl; // capture before thread spawn
+  std::thread([downloadUrl]() {
     std::wstring dest = GetAppRootPath() + L"BetterAngle_Setup_update.exe";
-    if (DownloadFile(g_dynamicDownloadUrl, dest) &&
+    if (DownloadFile(downloadUrl, dest) &&
         IsLikelyWindowsExecutable(dest)) {
       g_downloadComplete = true;
     } else {

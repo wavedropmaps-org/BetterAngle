@@ -2,7 +2,7 @@
 #include "shared/Logic.h"
 
 SelectionState g_currentSelection = NONE;
-bool g_isSelectionActive = false;
+std::atomic<bool> g_isSelectionActive{false};
 HBITMAP g_screenSnapshot = NULL;
 bool g_isDiving = false;
 bool g_showROIBox = true;
@@ -238,7 +238,7 @@ float g_currentAngle = 0.0f;
 std::atomic<bool> g_isCursorVisible(false);
 AngleLogic g_logic(0.05);
 
-int g_hudX = -1;
+int g_hudX = 40;
 int g_hudY = 40;
 int g_dashX = INT_MIN;
 int g_dashY = INT_MIN;

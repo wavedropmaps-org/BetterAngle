@@ -81,7 +81,7 @@ void CALLBACK WinEventProc(HWINEVENTHOOK hWinEventHook, DWORD event, HWND hwnd,
         Sleep(300);
         BlockInput(FALSE);
         g_blockInputActive = false;
-        LOG_INFO("Alt-tab cooldown active (300ms BlockInput)");
+        if (g_running.load()) LOG_INFO("Alt-tab cooldown active (300ms BlockInput)");
       }).detach();
     } else {
       g_fortniteFocusedCache = currentFortniteFocused;
@@ -114,7 +114,7 @@ void DetectorThread() {
   int cachedDisplayGen = -1;
 
   while (g_running) {
-    if (!g_allProfiles.empty() && g_currentSelection == NONE) {
+    if (!g_allProfiles.empty() && !g_isSelectionActive.load()) {
       Profile &p = g_allProfiles[g_selectedProfileIdx];
       g_logic.LoadProfile(p.sensitivityX);
       g_requiredMatchCount =
@@ -196,8 +196,10 @@ void DetectorThread() {
             Sleep(700);
             BlockInput(FALSE);
             g_blockInputActive = false;
-            g_lastLockTime = GetTickCount64();
-            LOG_INFO("Transition: glide->dive, 700ms BlockInput");
+            if (g_running.load()) {
+              g_lastLockTime = GetTickCount64();
+              LOG_INFO("Transition: glide->dive, 700ms BlockInput");
+            }
           }).detach();
         }
 
@@ -215,8 +217,10 @@ void DetectorThread() {
             Sleep(700);
             BlockInput(FALSE);
             g_blockInputActive = false;
-            g_lastLockTime = GetTickCount64();
-            LOG_INFO("Transition: dive->glide, 700ms BlockInput");
+            if (g_running.load()) {
+              g_lastLockTime = GetTickCount64();
+              LOG_INFO("Transition: dive->glide, 700ms BlockInput");
+            }
           }).detach();
         }
       }
@@ -230,7 +234,7 @@ void DetectorThread() {
     // bare _mm_pause when idle) peg a full CPU core for no benefit. Sleep a
     // short slice while in-game for a snappy ~200Hz scan, and a long slice
     // when tabbed out or selecting an ROI/colour (nothing to detect then).
-    bool active = g_fortniteFocusedCache.load() && g_currentSelection == NONE &&
+    bool active = g_fortniteFocusedCache.load() && !g_isSelectionActive.load() &&
                   !g_allProfiles.empty();
     Sleep(active ? kDetectorScanSleepMs : kDetectorIdleSleepMs);
   }
@@ -368,10 +372,6 @@ bool RefreshHotkeys(HWND hWnd, bool force) {
   for (int i = 1; i <= 6; i++) {
     UnregisterHotKey(hWnd, i);
   }
-
-  // Small delay to allow system to process unregistration (optional but can
-  // help)
-  Sleep(10);
 
   // Register new hotkeys with MOD_NOREPEAT to prevent key repeat issues
   // MOD_NOREPEAT (0x4000) prevents the hotkey from firing repeatedly when held
@@ -687,7 +687,7 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
       MONITORINFO mi = {sizeof(mi)};
       if (GetMonitorInfo(hMon, &mi)) {
         // Find which index this monitor matches in our list
-        for (int i = 0; i < 10; i++) {
+        for (int i = 0, monCount = GetSystemMetrics(SM_CMONITORS); i < monCount; i++) {
           RECT r = GetMonitorRectByIndex(i);
           if (r.left == mi.rcMonitor.left && r.top == mi.rcMonitor.top) {
             if (g_screenIndex != i) {
@@ -1007,6 +1007,7 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
   // When a monitor is plugged in or unplugged, Windows sends WM_DISPLAYCHANGE.
   // We auto-track Fortnite's monitor and resize the overlay to match.
   case WM_DISPLAYCHANGE: {
+    int oldScreenIndex = g_screenIndex;
     // Auto-track Fortnite's monitor: hot-plugging a 2nd monitor can renumber
     // monitor indices. Find Fortnite's current monitor and update g_screenIndex.
     HWND fnWnd = FindWindowW(NULL, L"Fortnite  ");
@@ -1024,6 +1025,14 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
         },
         reinterpret_cast<LPARAM>(&data));
       if (data.foundIndex >= 0) g_screenIndex = data.foundIndex;
+    }
+
+    if (g_screenIndex != oldScreenIndex) {
+      // Blank the old layered surface before moving to prevent a ghost copy
+      // being left on the unplugged/renumbered monitor. Same sequence as
+      // WM_USER+101 (drag/dropdown path).
+      DrawOverlay(hWnd, 0.0, false, false);
+      ShowWindow(hWnd, SW_HIDE);
     }
 
     RECT mRect = GetMonitorRectByIndex(g_screenIndex);
@@ -1140,6 +1149,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 
   // Sensitivity is loaded from the JSON profile; Do not blindly overwrite it
   // here.
+  if (g_selectedProfileIdx >= (int)g_allProfiles.size()) {
+    g_selectedProfileIdx = 0;
+  }
   g_currentProfile = g_allProfiles[g_selectedProfileIdx];
 
   g_selectedProfileIdx = 0;

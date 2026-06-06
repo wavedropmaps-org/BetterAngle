@@ -52,22 +52,28 @@ if (Test-Path $stateFile) {
 $releaseNotesFile = "RELEASE_NOTES.md"
 if (Test-Path $releaseNotesFile) {
     $oldNotes = Get-Content $releaseNotesFile
-    $newEntry = "### BetterAngle Pro v$newVersion`n"
-    
-    if ($CommitRange) {
-        $logs = git log $CommitRange --oneline --pretty=format:"- %s"
-        if ($logs) {
-            $newEntry += $logs + "`n"
+    $heading = "### BetterAngle Pro v$newVersion"
+
+    if ($oldNotes | Where-Object { $_ -eq $heading }) {
+        # Detailed notes already pre-written for this version — skip the stub so
+        # the release body shows the real change list instead of the generic line.
+        Write-Host "RELEASE_NOTES.md already has entry for v$newVersion - keeping existing notes"
+    } else {
+        $newEntry = "$heading`n"
+        if ($CommitRange) {
+            $logs = git log $CommitRange --oneline --pretty=format:"- %s"
+            if ($logs) {
+                $newEntry += $logs + "`n"
+            } else {
+                $newEntry += "- Automated build release.`n"
+            }
         } else {
             $newEntry += "- Automated build release.`n"
         }
-    } else {
-        $newEntry += "- Automated build release.`n"
+        $newContent = $newEntry + "`n" + ($oldNotes -join "`n")
+        $newContent | Out-File -FilePath $releaseNotesFile -Encoding ascii
+        Write-Host "Updated RELEASE_NOTES.md with new entry for v$newVersion"
     }
-    
-    $newContent = $newEntry + "`n" + ($oldNotes -join "`n")
-    $newContent | Out-File -FilePath $releaseNotesFile -Encoding ascii
-    Write-Host "Updated RELEASE_NOTES.md"
 }
 
 # 7. Commit and Tag (Self-Contained Golden Path)

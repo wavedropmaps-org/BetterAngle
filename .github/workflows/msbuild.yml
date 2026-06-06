@@ -80,7 +80,7 @@ jobs:
           $outLines = @()
           $seenFirst = $false
           foreach ($line in $lines) {
-              if ($line.StartsWith("## v")) {
+              if ($line -match '^### BetterAngle Pro v') {
                   if ($seenFirst) { break }
                   $seenFirst = $true
               }

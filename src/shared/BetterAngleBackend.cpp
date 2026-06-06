@@ -291,17 +291,9 @@ bool BetterAngleBackend::crosshairOn() const { return g_showCrosshair; }
 void BetterAngleBackend::setCrosshairOn(bool v) {
   g_showCrosshair = v;
   g_forceRedraw = true;
-  if (v) {
-    g_crossOffsetX = 0.0f;
-    g_crossOffsetY = 0.0f;
-  }
   if (!g_allProfiles.empty()) {
     Profile &p = g_allProfiles[g_selectedProfileIdx];
     p.showCrosshair = v;
-    if (v) {
-      p.crossOffsetX = 0.0f;
-      p.crossOffsetY = 0.0f;
-    }
     p.Save(GetProfilesPath() + p.name + L".json");
   }
   SaveSettings();
