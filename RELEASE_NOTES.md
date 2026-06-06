@@ -1,3 +1,28 @@
+### BetterAngle Pro v6.0.0
+Major release. Consolidates a full pass of overlay stability, input-safety, quality-of-life, and performance work.
+
+**Overlay & Multi-Monitor**
+- Fixed the decimal angle HUD leaving a frozen ghost/duplicate on the old monitor when dragging the dashboard across monitors (DWM surface now blanked before the move).
+- HUD auto-snaps to Fortnite's monitor on startup if the game is already running.
+- Crosshair and decimal HUD now correctly hide when Fortnite is not the focused window.
+
+**Input Safety**
+- Fixed ESC (and other keys) leaking into Explorer / tab-switching: the overlay no longer intercepts input or steals keyboard focus from other apps (`WS_EX_NOACTIVATE` + corrected click-through).
+
+**Quality of Life**
+- "Reset HUD Position" button to recover an off-screen HUD.
+- Dashboard window position is remembered across restarts.
+- System tray tooltip shows the live angle.
+- Fortnite running/focused/monitor status surfaced in the Debug tab.
+
+**Update Channels**
+- Stable / Beta update channels via `MIN_STABLE_VERSION`: normal users are only notified once a build is graduated to stable; a Beta toggle in the Debug tab opts testers into pre-releases. Active channel shown in the Updates tab.
+
+**Performance**
+- Eliminated a detector thread that was pegging a full CPU core 100% of the time (now throttled, near-idle when tabbed out).
+- Removed disk thrashing while dragging the dashboard window.
+- Cached the Debug-tab monitor lookup.
+
 ### BetterAngle Pro v5.5.317
 - Automated build release.
 
