@@ -175,22 +175,28 @@ int BetterAngleBackend::screenIndex() const {
 void BetterAngleBackend::setScreenIndex(int v) {
   if (v < 0)
     v = 0;
-  g_screenIndex = v;
+
   if (!g_allProfiles.empty()) {
     Profile &p = g_allProfiles[g_selectedProfileIdx];
     p.screenIndex = v;
     p.Save(GetProfilesPath() + p.name + L".json");
   }
-  SaveSettings();
 
-  // Move the HUD window to the new monitor (v5.5.76)
-  if (g_hHUD) {
-    RECT mRect = GetMonitorRectByIndex(v);
-    SetWindowPos(g_hHUD, HWND_TOPMOST, mRect.left, mRect.top,
-                 mRect.right - mRect.left, mRect.bottom - mRect.top,
-                 SWP_NOACTIVATE | SWP_SHOWWINDOW);
-    g_forceRedraw = true;
+  // Hand the monitor switch to the Win32 thread via the same WM_USER+101 path
+  // used for cross-monitor drags. That handler does the ghost-free sequence
+  // (blank the old monitor's layered surface -> hide -> move -> show) and sets
+  // g_screenIndex itself. The previous direct SetWindowPos here ran on the Qt
+  // side (risking the DWM desync fixed in v5.5.307) AND skipped the
+  // ghost-prevention blank, so switching monitors via the dropdown could leave
+  // a frozen HUD copy on the old screen. The handler's guard requires
+  // g_screenIndex to still hold the OLD value, so we don't pre-set it here; the
+  // profile save above already persists the new value authoritatively.
+  if (g_hHUD && v != g_screenIndex) {
+    PostMessageW(g_hHUD, WM_USER + 101, v, 0);
+  } else {
+    g_screenIndex = v;
   }
+  SaveSettings();
 
   emit profileChanged();
 }

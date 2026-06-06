@@ -34,6 +34,12 @@ Window {
         // No longer forcing crosshair state here to allow user preference to persist
     }
 
+    // True only while we apply the saved position on startup. Setting x/y here
+    // fires onXChanged/onYChanged; without this guard the restore would call
+    // syncHudToWindow and yank the HUD onto the dashboard's monitor, overriding
+    // the startup detection that already placed it on Fortnite's monitor.
+    property bool _initialRestore: true
+
     Component.onCompleted: {
         // Restore last saved position; fall back to screen centre on first run.
         var sx = backend ? backend.savedDashX : -2147483648
@@ -45,19 +51,21 @@ Window {
             x = Screen.width / 2 - width / 2
             y = Screen.height / 2 - height / 2
         }
+        _initialRestore = false
     }
 
     // When the dashboard is dragged, keep the HUD angle readout attached and
-    // persist the new window position so it restores on next launch.
+    // persist the new window position so it restores on next launch. The HUD
+    // sync is skipped during the initial restore (see _initialRestore above).
     onXChanged: {
         if (backend) {
-            backend.syncHudToWindow(x, y, width, height)
+            if (!_initialRestore) backend.syncHudToWindow(x, y, width, height)
             backend.saveDashboardPosition(x, y)
         }
     }
     onYChanged: {
         if (backend) {
-            backend.syncHudToWindow(x, y, width, height)
+            if (!_initialRestore) backend.syncHudToWindow(x, y, width, height)
             backend.saveDashboardPosition(x, y)
         }
     }

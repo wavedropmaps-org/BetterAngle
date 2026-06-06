@@ -1,5 +1,6 @@
-### BetterAngle Pro v6.0.2
-- Automated build release.
+### BetterAngle Pro v6.0.3
+- **Fix: HUD Lands on the Wrong Monitor at Startup**. With Fortnite on one monitor and the dashboard remembered on another, the startup Fortnite-monitor detection was immediately overridden when the dashboard restored its saved position (the restore fired the HUD-follow sync). The angle overlay ended up on the dashboard's monitor instead of over Fortnite. The HUD-follow sync is now suppressed during the initial position restore, so the Fortnite-monitor detection wins on launch; dragging the dashboard during use still moves the HUD as before.
+- **Fix: Ghost HUD When Switching Monitors via the Dropdown**. Selecting a monitor in the Display dropdown moved the HUD with a direct `SetWindowPos` from the Qt side and skipped the ghost-prevention blank, so it could leave a frozen HUD copy on the old monitor (and risked the DWM desync addressed in v5.5.307). The dropdown now routes through the same Win32-thread `WM_USER+101` path as cross-monitor drags, which blanks the old surface before moving.
 
 ### BetterAngle Pro v6.0.2
 - **Fix: Per-Tick Monitor Enumeration (perf regression)**. The v6.0.1 multi-monitor HUD-drag fix computed `GetMonitorRectByIndex()` (which runs `EnumDisplayMonitors`) on every input timer tick ? ~100?/sec ? even when no drag was happening. The monitor lookup is now only performed at the moment of a Ctrl+grab attempt, so it runs rarely instead of continuously. No behaviour change to dragging.
