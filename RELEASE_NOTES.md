@@ -1,5 +1,8 @@
+### BetterAngle Pro v5.5.317
+- Automated build release.
+
 ### BetterAngle Pro v5.5.316
-- **Cleanup: Cache Debug-Tab Fortnite Monitor Lookup**. The "Fortnite Monitor" label in the Debug tab ran a window search + full monitor enumeration on every debug refresh (every 10ms while the Debug tab is open). The resolved monitor index is now cached for 500ms, so the expensive lookup runs ~2×/sec instead of ~100×/sec. The live focused/active state still updates on every refresh. Only affects the Debug tab while it's open; no gameplay impact.
+- **Cleanup: Cache Debug-Tab Fortnite Monitor Lookup**. The "Fortnite Monitor" label in the Debug tab ran a window search + full monitor enumeration on every debug refresh (every 10ms while the Debug tab is open). The resolved monitor index is now cached for 500ms, so the expensive lookup runs ~2?/sec instead of ~100?/sec. The live focused/active state still updates on every refresh. Only affects the Debug tab while it's open; no gameplay impact.
 
 ### BetterAngle Pro v5.5.315
 - **Performance: Fix Disk Thrashing on Dashboard Drag**. The dashboard position-save added in v5.5.311 called `SaveSettings()` (a full settings.json rewrite) on every `onXChanged`/`onYChanged` ? which fire 100+ times per second while dragging the window. Dragging the dashboard was writing the whole settings file to disk hundreds of times a second, causing needless disk I/O, SSD wear, and possible drag stutter. The position is now updated in memory only; the existing 30-second auto-save timer and the on-exit save persist it. Matches how the HUD drag already worked (save once on release).
