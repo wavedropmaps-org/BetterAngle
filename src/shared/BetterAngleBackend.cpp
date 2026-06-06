@@ -1118,8 +1118,24 @@ void BetterAngleBackend::saveDashboardPosition(int x, int y) {
   g_dashY = y;
 }
 
-int BetterAngleBackend::savedDashX() const { return g_dashX; }
-int BetterAngleBackend::savedDashY() const { return g_dashY; }
+// A saved position is only valid if its title-bar area still lands on a
+// connected monitor. Otherwise (e.g. the dashboard was last on a second
+// monitor that is now unplugged) we report "no saved position" so the UI
+// falls back to centring on the primary screen instead of restoring the
+// window off-screen where it can't be reached.
+static bool DashPosOnScreen() {
+  if (g_dashX == INT_MIN || g_dashY == INT_MIN)
+    return false;
+  POINT titleBar = {g_dashX + 60, g_dashY + 20};
+  return MonitorFromPoint(titleBar, MONITOR_DEFAULTTONULL) != NULL;
+}
+
+int BetterAngleBackend::savedDashX() const {
+  return DashPosOnScreen() ? g_dashX : INT_MIN;
+}
+int BetterAngleBackend::savedDashY() const {
+  return DashPosOnScreen() ? g_dashY : INT_MIN;
+}
 
 QString BetterAngleBackend::fortniteMonitorLabel() const {
   // This is bound to debugDataChanged, which fires every 10ms while the Debug

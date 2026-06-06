@@ -1,3 +1,7 @@
+### BetterAngle Pro v6.0.1
+- **Fix: HUD Can't Be Dragged on a Second Monitor**. The Ctrl+drag hit-test compared the absolute cursor position against the HUD's monitor-relative coordinates, so grabbing the HUD only worked on the primary monitor. On any secondary monitor the HUD rendered correctly but couldn't be picked up. The cursor is now converted into monitor-relative space before hit-testing (the drag delta math was already space-independent).
+- **Fix: Dashboard Restoring Off-Screen After Monitor Unplug**. The window-position restore added in the v6 line had no bounds check — if the dashboard was last positioned on a second monitor that is no longer connected, it restored off-screen and was unreachable. The saved position is now validated against the connected monitors; if its title-bar area isn't on a real screen, the dashboard falls back to centring on the primary monitor.
+
 ### BetterAngle Pro v6.0.0
 Major release. Consolidates a full pass of overlay stability, input-safety, quality-of-life, and performance work.
 

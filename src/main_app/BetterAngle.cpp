@@ -871,9 +871,20 @@ LRESULT CALLBACK HUDWndProc(HWND hWnd, UINT message, WPARAM wParam,
         // Dragging the HUD requires holding Ctrl to prevent accidental drags
         bool canDrag = ctrlDown;
 
+        // g_hudX/g_hudY are monitor-relative (the HUD is drawn into a layered
+        // window positioned at the active monitor's origin). GetCursorPos is
+        // absolute virtual-desktop space, so convert the cursor into the same
+        // monitor-relative space before hit-testing — otherwise the test only
+        // succeeds on the primary monitor (origin 0,0) and the HUD can't be
+        // grabbed on any secondary monitor. The drag delta math below works in
+        // either space, so only the hit-test needs the offset.
+        RECT hudMon = GetMonitorRectByIndex(g_screenIndex);
+        int relX = pt.x - hudMon.left;
+        int relY = pt.y - hudMon.top;
+
         if (lDown && !g_isDraggingHUD && canDrag) {
-          if (pt.x >= g_hudX && pt.x <= g_hudX + 260 && pt.y >= g_hudY &&
-              pt.y <= g_hudY + 150) {
+          if (relX >= g_hudX && relX <= g_hudX + 260 && relY >= g_hudY &&
+              relY <= g_hudY + 150) {
             g_isDraggingHUD = true;
             g_dragStartMouse = pt;
             g_dragStartHUD.x = g_hudX;
