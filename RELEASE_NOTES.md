@@ -1,5 +1,5 @@
-### BetterAngle Pro v6.0.1
-- Automated build release.
+### BetterAngle Pro v6.0.2
+- **Fix: Per-Tick Monitor Enumeration (perf regression)**. The v6.0.1 multi-monitor HUD-drag fix computed `GetMonitorRectByIndex()` (which runs `EnumDisplayMonitors`) on every input timer tick — ~100×/sec — even when no drag was happening. The monitor lookup is now only performed at the moment of a Ctrl+grab attempt, so it runs rarely instead of continuously. No behaviour change to dragging.
 
 ### BetterAngle Pro v6.0.1
 - **Fix: HUD Can't Be Dragged on a Second Monitor**. The Ctrl+drag hit-test compared the absolute cursor position against the HUD's monitor-relative coordinates, so grabbing the HUD only worked on the primary monitor. On any secondary monitor the HUD rendered correctly but couldn't be picked up. The cursor is now converted into monitor-relative space before hit-testing (the drag delta math was already space-independent).
