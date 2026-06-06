@@ -1122,25 +1122,40 @@ int BetterAngleBackend::savedDashX() const { return g_dashX; }
 int BetterAngleBackend::savedDashY() const { return g_dashY; }
 
 QString BetterAngleBackend::fortniteMonitorLabel() const {
-  HWND fn = FindWindowW(NULL, L"Fortnite  ");
-  if (!fn) fn = FindWindowW(NULL, L"Fortnite");
-  if (!fn || !IsWindow(fn))
+  // This is bound to debugDataChanged, which fires every 10ms while the Debug
+  // tab is open. The window search + monitor enumeration is comparatively
+  // expensive, so cache the resolved monitor index for 500ms. The focused
+  // state (a cheap atomic load) stays live on every call.
+  static ULONGLONG s_lastResolve = 0;
+  static int s_cachedIdx = -1;       // -1 == Fortnite not running
+  ULONGLONG now = GetTickCount64();
+
+  if (now - s_lastResolve >= 500) {
+    s_lastResolve = now;
+    HWND fn = FindWindowW(NULL, L"Fortnite  ");
+    if (!fn) fn = FindWindowW(NULL, L"Fortnite");
+    if (!fn || !IsWindow(fn)) {
+      s_cachedIdx = -1;
+    } else {
+      HMONITOR hMon = MonitorFromWindow(fn, MONITOR_DEFAULTTONEAREST);
+      struct FindData { HMONITOR target; int cur; int found; };
+      FindData fd = {hMon, 0, -1};
+      EnumDisplayMonitors(NULL, NULL,
+        [](HMONITOR h, HDC, LPRECT, LPARAM p) -> BOOL {
+          auto *d = reinterpret_cast<FindData *>(p);
+          if (h == d->target) { d->found = d->cur; return FALSE; }
+          d->cur++;
+          return TRUE;
+        }, reinterpret_cast<LPARAM>(&fd));
+      s_cachedIdx = (fd.found >= 0) ? fd.found : g_screenIndex;
+    }
+  }
+
+  if (s_cachedIdx < 0)
     return "Not Running";
 
-  HMONITOR hMon = MonitorFromWindow(fn, MONITOR_DEFAULTTONEAREST);
-  struct FindData { HMONITOR target; int cur; int found; };
-  FindData fd = {hMon, 0, -1};
-  EnumDisplayMonitors(NULL, NULL,
-    [](HMONITOR h, HDC, LPRECT, LPARAM p) -> BOOL {
-      auto *d = reinterpret_cast<FindData *>(p);
-      if (h == d->target) { d->found = d->cur; return FALSE; }
-      d->cur++;
-      return TRUE;
-    }, reinterpret_cast<LPARAM>(&fd));
-
-  int idx = (fd.found >= 0) ? fd.found : g_screenIndex;
   bool focused = g_fortniteFocusedCache.load();
-  return QString("Monitor %1%2").arg(idx + 1).arg(focused ? "  (Active)" : "");
+  return QString("Monitor %1%2").arg(s_cachedIdx + 1).arg(focused ? "  (Active)" : "");
 }
 
 bool BetterAngleBackend::fnRunning() const {
